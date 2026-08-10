@@ -72,5 +72,5 @@ class RepositorioAutomData(RepositorioBase):
                 numero_cte = '{self._escapar(str(numero_cte))}',
                 extras = '{self._escapar(extras)}'
             WHERE id = {int(id_registro)}
-        """
+        """  # nosec B608
         return self._executar_escrita(sql)

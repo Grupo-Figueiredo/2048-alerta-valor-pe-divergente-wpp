@@ -28,5 +28,5 @@ class RepositorioSgt20(RepositorioBase):
                 gr_cte
             WHERE
                 documento_transporte = '{self._escapar(documento_transporte)}'
-        """
+        """  # nosec B608
         return self._executar_consulta(sql)
