@@ -1,0 +1,41 @@
+name: Produção
+
+# Branch de produção (`main`, Environment `prd`):
+#  - Pull Request para `main` → SÓ lint/validação
+#  - push em `main` (merge)   → validação + build/push da imagem de produção
+#                               (`:latest` e `:<versão do pyproject.toml>`)
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prd-${{ github.ref }}
+  # Cancela PRs em fila; nunca cancela um merge no meio do build.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validar:
+    uses: ./.github/workflows/_reusable-ci.yml
+    secrets: inherit
+
+  build:
+    needs: validar
+    # Só no merge: em Pull Request a pipeline para na validação.
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      ambiente: production
+    secrets: inherit
+
+  deploy:
+    needs: build
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/_reusable-deploy.yml
+    with:
+      ambiente: production
+    secrets: inherit

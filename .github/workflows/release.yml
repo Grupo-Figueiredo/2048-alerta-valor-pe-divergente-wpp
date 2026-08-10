@@ -1,0 +1,56 @@
+name: Release
+
+# Fase 2 concluida: hml.yml foi removido (ver CLAUDE.md, secao Fluxo de
+# branches) - o Environment de homolog nasce agora como `release`, nao mais
+# `hml`, e a branch efemera abaixo e a unica que versiona homolog.
+#
+# Branch de homologacao (`release/*`, nascida da `dev` a cada ciclo):
+#  - Pull Request para `release/*` -> SO lint/validacao
+#  - push em `release/*` (merge)   -> SO versiona (se preciso)
+# NAO builda imagem nem implanta no Kestra aqui - isso so acontece no merge
+# para a `main` (job `build`/`deploy` de prd.yml), seja vindo de `release/*`
+# ou de `fix/hotfix-*`. So a `release/*` (ou `fix/hotfix-*`) faz PR para a
+# `main` - a `dev` nunca fala direto com a `main` (ver automacao-valida-origem-pr.yml).
+on:
+  pull_request:
+    branches: ["release/**"]
+  push:
+    branches: ["release/**"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  # Cancela PRs em fila; nunca cancela um merge no meio do build.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validar:
+    uses: ./.github/workflows/_reusable-ci.yml
+    secrets: inherit
+
+  versionar:
+    # So no push: em Pull Request nao ha o que versionar ainda.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      incrementou: ${{ steps.checar.outputs.incrementou }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Calcula a versao semantica (major.minor.patch pelo tipo dos commits
+      # desde a ultima tag, ou pela label version:major/minor/patch no PR
+      # desta release para a main) e ja aplica o incremento aqui, cedo -
+      # antes de qualquer coisa chegar na main, onde o build de fato usa essa
+      # versao para taguear a imagem (prd.yml). Logica completa em
+      # .github/scripts/versionar.sh.
+      - name: Calcular e aplicar a versão semântica
+        id: checar
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          BRANCH_NOME: ${{ github.ref_name }}
+        run: bash .github/scripts/versionar.sh

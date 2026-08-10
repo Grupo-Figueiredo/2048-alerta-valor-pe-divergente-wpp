@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "api-figueiredo": {
+      "type": "http",
+      "url": "http://10.0.0.187:8001/mcp",
+      "headersHelper": "echo '{\"Authorization\": \"Basic bWNwOmV4cGZpZ0AyMDI2\"}'"
+    }
+  }
+}

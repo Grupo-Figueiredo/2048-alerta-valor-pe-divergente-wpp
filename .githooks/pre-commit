@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Pre-commit: lint (ruff).
+#
+# Ativação (uma vez, após clonar o repositório):
+#   git config core.hooksPath .githooks
+#
+# Este hook NÃO mexe mais na versão do `pyproject.toml`. Quem decide a versão é
+# `.github/scripts/versionar.sh`, no CI, a partir da última tag de produção e do
+# tipo dos commits acumulados (ou da label `version:*` no PR para a `main`) —
+# ver a seção "Versionamento e CI/CD" do CLAUDE.md. Um incremento local a cada
+# commit disputaria o mesmo campo e produziria versões sem relação com o que
+# mudou de fato.
+set -euo pipefail
+
+echo "→ Lint (ruff check)..."
+if ! uv run ruff check .; then
+    echo "✗ ruff check falhou. Corrija (ou rode 'uv run ruff check --fix .') antes de commitar." >&2
+    exit 1
+fi
+
+echo "→ Formatação (ruff format --check)..."
+if ! uv run ruff format --check .; then
+    echo "✗ Formatação inconsistente. Rode 'uv run ruff format .', adicione as mudanças e tente de novo." >&2
+    exit 1
+fi
+
+echo "✓ Lint OK."
+
+exit 0

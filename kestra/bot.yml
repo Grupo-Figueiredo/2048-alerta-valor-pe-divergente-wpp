@@ -1,0 +1,38 @@
+# Flow de referência do Kestra para este bot — scaffold, NÃO aplicado
+# automaticamente (ver .github/workflows/_reusable-deploy.yml). Copie o
+# conteúdo abaixo na UI do Kestra depois de ajustar os placeholders
+# 2048-alerta-valor-pe-divergente-wpp e <namespace>.
+#
+# Pré-requisitos no Kestra:
+#   - Plugin Docker habilitado (io.kestra.plugin.docker.Run).
+#   - Acesso ao registry local 10.0.0.72:5000 a partir do worker do Kestra.
+#   - Secrets do bot cadastrados no Kestra (ex.: API_USERNAME, API_PASSWORD).
+
+id: 2048-alerta-valor-pe-divergente-wpp
+namespace: <namespace>
+
+# Evita sobreposição: se a execução anterior ainda estiver rodando no próximo
+# tick, a nova é cancelada. Ajuste ou remova conforme a necessidade do bot.
+concurrency:
+  limit: 1
+  behavior: CANCEL
+
+tasks:
+  - id: run
+    type: io.kestra.plugin.docker.Run
+    containerImage: 10.0.0.72:5000/2048-alerta-valor-pe-divergente-wpp:latest
+    pullPolicy: ALWAYS
+    entryPoint: []
+    commands:
+      - /bin/sh
+      - -c
+      - cd /app && uv run main.py
+    env:
+      ENVIRONMENT: "production"
+      # Credenciais da API V2 e demais secrets do bot — cadastre no Kestra e
+      # referencie aqui com "{{ secret('NOME') }}".
+
+triggers:
+  - id: agendamento
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 * * * *" # ajuste a frequência real do bot

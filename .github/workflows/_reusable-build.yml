@@ -1,0 +1,103 @@
+name: Build (reutilizável)
+
+# Workflow reutilizável (workflow_call): implementação ÚNICA de build + varredura
+# de vulnerabilidades + push da imagem + tag/release, parametrizada por ambiente.
+#
+# SÓ é chamada no merge para a `main` (push), por prd.yml. Pull Request nunca
+# chega aqui: validação é uma coisa, publicar imagem é outra. A `release/*` não
+# builda — só versiona (ver release.yml); a imagem nasce uma vez só, na `main`.
+on:
+  workflow_call:
+    inputs:
+      ambiente:
+        description: "homolog | production"
+        required: true
+        type: string
+
+# `write`: o passo final cria a tag `v<versão>` e a release do GitHub.
+permissions:
+  contents: write
+
+env:
+  IMAGE_REPO: 10.0.0.72:5000/2048-alerta-valor-pe-divergente-wpp
+
+jobs:
+  build:
+    runs-on: self-hosted
+    timeout-minutes: 20
+    # Grupo próprio por ambiente: nunca cancela um build no meio (só enfileira).
+    concurrency:
+      group: build-${{ inputs.ambiente }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # A versão já vem incrementada da `release/*`/`fix/hotfix-*` que originou
+      # este merge (.github/scripts/versionar.sh) — aqui só lemos, sem tocar no
+      # repositório.
+      - name: Ler versão do pyproject.toml
+        id: versao
+        run: echo "versao=$(grep -m1 '^version' pyproject.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
+
+      # Homolog tem namespace próprio de tags (`hml`, `hml-<versão>`) para não
+      # disputar `:latest` com produção — quem roda em produção nunca recebe uma
+      # imagem de homolog por engano.
+      - name: Definir as tags da imagem
+        id: tags
+        run: |
+          if [ "${{ inputs.ambiente }}" = "production" ]; then
+            echo "movel=latest" >> "$GITHUB_OUTPUT"
+            echo "fixa=${{ steps.versao.outputs.versao }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "movel=hml" >> "$GITHUB_OUTPUT"
+            echo "fixa=hml-${{ steps.versao.outputs.versao }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build da imagem
+        run: |
+          docker build \
+            -t ${{ env.IMAGE_REPO }}:${{ steps.tags.outputs.movel }} \
+            -t ${{ env.IMAGE_REPO }}:${{ steps.tags.outputs.fixa }} \
+            .
+
+      - name: Validação de segurança (Trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_REPO }}:${{ steps.tags.outputs.fixa }}
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Push para o registry local
+        run: |
+          docker push ${{ env.IMAGE_REPO }}:${{ steps.tags.outputs.movel }}
+          docker push ${{ env.IMAGE_REPO }}:${{ steps.tags.outputs.fixa }}
+
+      # Só DEPOIS do push confirmado: nunca marcamos como publicada uma versão
+      # cuja imagem falhou no caminho (build, Trivy ou push).
+      #
+      # A tag `v<versão>` não é decorativa: `.github/scripts/versionar.sh` usa a
+      # última tag de produção como base do próximo incremento e como início do
+      # intervalo de commits que ele varre. Sem este passo, todo ciclo
+      # recalcularia a versão varrendo o histórico inteiro, a partir de uma base
+      # errada — é este passo que fecha o ciclo do versionamento semântico.
+      - name: Criar tag e release da versão publicada
+        if: inputs.ambiente == 'production'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v${{ steps.versao.outputs.versao }}
+        run: |
+          # Idempotente: um re-run do workflow não pode falhar por tag repetida.
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG já existe, nada a fazer."
+            exit 0
+          fi
+          git tag "$TAG"
+          git push origin "$TAG"
+          gh release create "$TAG" --title "$TAG" \
+            --notes "Imagem publicada: ${{ env.IMAGE_REPO }}:${{ steps.tags.outputs.fixa }}"

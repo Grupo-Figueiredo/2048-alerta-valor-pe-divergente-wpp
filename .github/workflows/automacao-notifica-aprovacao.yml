@@ -1,0 +1,42 @@
+name: notify-approval-main
+
+# Envia e-mail quando um PR para a main e aprovado. O gatilho pull_request_review
+# dispara para QUALQUER review de QUALQUER PR (aprovacao, comentario ou
+# solicitacao de mudanca, em PR para main, dev ou release/*) - o filtro abaixo e
+# o que restringe o envio so para aprovacoes cujo destino e a main.
+#
+# Requer os secrets SMTP_HOST/SMTP_USER/SMTP_PASS e a variable
+# RELEASE_MAIL_LIST cadastrados a mao no repositorio (ver Etapa 4.1 do README) -
+# o SDK nao tem como saber credenciais de SMTP nem a lista de destinatarios.
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: read
+
+jobs:
+  email:
+    # state == 'approved': ignora comentario e "changes_requested".
+    # base.ref == 'main': ignora aprovacoes em PR para dev/release.
+    if: github.event.review.state == 'approved' && github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Envia email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_HOST }}
+          server_port: 587
+          secure: false
+          username: ${{ secrets.SMTP_USER }}
+          password: ${{ secrets.SMTP_PASS }}
+          from: GitHub Bot <${{ secrets.SMTP_USER }}>
+          to: ${{ vars.RELEASE_MAIL_LIST }}
+          subject: "[${{ github.repository }}] PR #${{ github.event.pull_request.number }} aprovado para main"
+          body: |
+            Repositorio: ${{ github.repository }}
+            PR: #${{ github.event.pull_request.number }} - ${{ github.event.pull_request.title }}
+            Autor: ${{ github.event.pull_request.user.login }}
+            Aprovador: ${{ github.event.review.user.login }}
+            Origem: ${{ github.event.pull_request.head.ref }} -> main
+            Link: ${{ github.event.pull_request.html_url }}

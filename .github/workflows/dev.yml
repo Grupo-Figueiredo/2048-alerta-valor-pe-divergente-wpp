@@ -1,0 +1,24 @@
+name: Dev
+
+# Branch de integração (`dev`): SÓ validação.
+#  - Pull Request para `dev`  → lint/validação (gate do merge)
+#  - push em `dev` (merge)    → lint/validação
+# Nada de build nem deploy aqui: a imagem só é construída ao mergear em `main`
+# (produção), vindo de uma `release/*` ou `fix/hotfix-*`.
+on:
+  pull_request:
+    branches: ["dev"]
+  push:
+    branches: ["dev"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dev-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validar:
+    uses: ./.github/workflows/_reusable-ci.yml
+    secrets: inherit

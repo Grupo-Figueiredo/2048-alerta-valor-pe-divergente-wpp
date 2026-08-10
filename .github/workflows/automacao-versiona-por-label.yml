@@ -1,0 +1,35 @@
+name: automacao-versiona-por-label
+
+# Se alguem adicionar uma label version:major/version:minor/version:patch
+# num PR aberto de release/*/fix/hotfix-* para a main, recalcula a versao na
+# hora - sem essa automacao, a sobrescrita por label so valeria a partir do
+# PROXIMO push na branch (o que dispara os workflows de push normalmente), o
+# que obrigaria a fazer um commit vazio so pra ativar.
+#
+# Mesmo script usado pelos outros dois pontos de versionamento
+# (.github/scripts/versionar.sh), so muda o gatilho e a branch que ele faz
+# checkout (a origem do PR, nao a main).
+on:
+  pull_request:
+    types: [labeled]
+    branches: ["main"]
+
+permissions:
+  contents: write
+
+jobs:
+  versionar:
+    if: startsWith(github.event.pull_request.head.ref, 'release/') || startsWith(github.event.pull_request.head.ref, 'fix/hotfix-')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Recalcular versão com a label aplicada
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          BRANCH_NOME: ${{ github.event.pull_request.head.ref }}
+        run: bash .github/scripts/versionar.sh

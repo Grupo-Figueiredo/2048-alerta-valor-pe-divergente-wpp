@@ -1,0 +1,66 @@
+name: back-merge-main-dev
+
+# Passo "O fluxo que vamos implementar": apos qualquer push na main
+# (squash-merge de release/*|fix/hotfix-* -> main), back-merge automatico
+# main->dev. Squash cria um commit sem ancestralidade em comum com dev/
+# release - sem esse back-merge, a proxima promocao gera conflito garantido
+# em qualquer linha que mude nos dois lados (ex.: a versao do
+# pyproject.toml).
+#
+# Cobre so a dev: a release/* efemera ja e apagada ao virar main, entao
+# nao ha branch de homolog permanente para sincronizar (fase 2 concluida -
+# o Environment de homolog agora e o `release`, sem branch fixa).
+#
+# O merge do PR usa secrets.GH_TOKEN (PAT do Admin), nao o GITHUB_TOKEN
+# padrao: o ruleset protect-dev (provisionado por ServicoRulesetGitHub)
+# exige aprovacao via bypass_actors de role Admin, e o bot "github-actions"
+# nao entraria na lista de bypass - so um papel humano entraria. Com o PAT,
+# o merge e atribuido a esse humano e passa.
+on:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: back-merge-main-dev
+  cancel-in-progress: false
+
+jobs:
+  back-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Back-merge main -> dev (merge commit real, nunca squash)
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          git fetch origin main dev
+
+          if git merge-base --is-ancestor origin/main origin/dev; then
+            echo "dev ja contem a main, nada a fazer."
+            exit 0
+          fi
+
+          git config user.name "back-merge-bot"
+          git config user.email "actions@github.com"
+
+          BRANCH="chore/back-merge-main-$(git rev-parse --short origin/main)"
+          git checkout -b "$BRANCH" origin/dev
+
+          if git merge origin/main --no-edit; then
+            git push origin "$BRANCH"
+            gh pr create --base dev --head "$BRANCH" \
+              --title "chore: sincroniza dev com main via back-merge automatico" \
+              --body "Back-merge automatico apos push em main (evita divergencia de historico apos squash-merge)."
+            gh pr merge "$BRANCH" --merge --delete-branch
+          else
+            git merge --abort
+            echo "::error::Conflito real no back-merge main->dev. Resolva manualmente: git checkout dev && git merge origin/main"
+            exit 1
+          fi

@@ -1,0 +1,54 @@
+name: CI (reutilizável)
+
+# Workflow reutilizável (workflow_call): implementação ÚNICA de lint e validação
+# de segurança (isort, bandit, gitleaks, pip-audit, Trivy fs), chamada por
+# dev.yml, release.yml e prd.yml. Roda em Pull Request E em push (merge) —
+# nunca constrói imagem nem publica nada.
+on:
+  workflow_call: {}
+
+permissions:
+  contents: read
+
+jobs:
+  qualidade:
+    runs-on: self-hosted
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Cache virtualenv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: ${{ runner.os }}-venv-${{ hashFiles('uv.lock') }}
+      - name: Instalar dependências
+        run: uv sync --frozen
+      - name: Lint (ruff check)
+        run: uv run ruff check .
+      - name: Format check (ruff format)
+        run: uv run ruff format --check .
+      - name: Ordenar imports (isort)
+        run: uv run isort --check-only --diff .
+      - name: SAST Python (bandit)
+        run: uvx bandit -r . -x ./.venv -ll
+      - name: Segredo exposto (gitleaks)
+        run: |
+          curl -sSfL -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks detect --source . --no-git --redact --exit-code 1
+      - name: Dependências com CVE conhecida (pip-audit)
+        run: |
+          uv export --no-hashes --format requirements-txt -o requirements-audit.txt
+          uvx pip-audit -r requirements-audit.txt
+      - name: Dependências e configuração (Trivy, filesystem)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"

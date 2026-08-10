@@ -1,0 +1,4 @@
+banco,schema,tabela,permissao
+autom_data,logs,process,write
+autom_data,logs,process,update
+autom_data,logs,logs,write

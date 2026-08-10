@@ -1,0 +1,7 @@
+# So a main exige aprovacao de code owner (ver CLAUDE.md, secao Fluxo de branches).
+# Basta o approve de UM dos donos listados abaixo - nao sao aprovacoes somadas.
+# Troque pelo(s) dono(s) reais deste bot antes de ativar a protecao da main.
+# Todo dono listado precisa ter permissao WRITE no repositorio, senao o
+# GitHub o ignora em silencio.
+
+* @{{seu-usuario-ou-time-github}}

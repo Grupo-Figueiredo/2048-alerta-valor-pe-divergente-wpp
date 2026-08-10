@@ -1,0 +1,41 @@
+name: automacao-versiona-fix-hotfix
+
+# Garante que a versao em pyproject.toml sempre reflete o tipo real das
+# mudancas antes de uma fix/hotfix-* chegar na main.
+#
+# So cobre fix/hotfix-**: a release/* versiona dentro do proprio release.yml
+# (job "versionar", antes do job "build"), para o incremento acontecer antes
+# do build e nao gerar um build orfao. A fix/hotfix-* nao tem pipeline de
+# build propria (o build de producao so acontece depois do merge para a
+# main), entao nao ha o mesmo risco de build duplicado aqui - por isso
+# continua num workflow separado.
+#
+# A logica de calculo (major/minor/patch pelo tipo dos commits desde a
+# ultima tag, ou pela label version:major/minor/patch no PR desta hotfix
+# para a main) esta em .github/scripts/versionar.sh - o mesmo script usado
+# pela release/*, para nao duplicar a regra em dois lugares.
+on:
+  push:
+    branches: ["fix/hotfix-**"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: versiona-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  versionar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Calcular e aplicar a versão semântica
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          BRANCH_NOME: ${{ github.ref_name }}
+        run: bash .github/scripts/versionar.sh

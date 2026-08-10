@@ -1,0 +1,42 @@
+name: validate-merge-source
+
+# ATENCAO: o `name:` do workflow e o id do job abaixo (validate-merge-source)
+# tem que continuar exatamente com esse nome em ingles, caso um ruleset real
+# venha a exigir esse status check pelo nome literal (fase 2, provisionamento
+# automatico). O arquivo em si pode ter qualquer nome.
+#
+# main so aceita PR vindo de release/* ou fix/hotfix-* (nunca direto de
+# feat/* nem de dev); dev aceita branches de tipo ou back-merge da main. A
+# dev nunca fala direto com a main - so release/*/fix/hotfix-* fazem essa
+# ponte. Roda em ubuntu-latest (independente da infra interna usada pelo CI
+# real do bot).
+on:
+  pull_request:
+    branches: [main, dev]
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  validate-merge-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checa origem permitida do PR
+        env:
+          BASE: ${{ github.base_ref }}
+          HEAD: ${{ github.head_ref }}
+        run: |
+          case "$BASE" in
+            main) echo "$HEAD" | grep -Eq '^(release/.+|fix/hotfix-.+)$' \
+                    || { echo "main so aceita release/* ou fix/hotfix-*"; exit 1; } ;;
+            dev)  echo "$HEAD" | grep -Eq '^(main|(feat|fix|chore|docs?|refactor|test|perf|ci|build)/.+)$' \
+                    || { echo "dev so aceita branches de tipo ou back-merge da main"; exit 1; } ;;
+          esac
+
+      - name: Checa titulo do PR (Conventional Commits)
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "$TITLE" | grep -Eq '^(build|chore|ci|docs?|feat|fix|perf|refactor|revert|style|test)(\([a-z0-9._/-]+\))?!?: .+' \
+            || { echo "titulo do PR fora do padrao"; exit 1; }

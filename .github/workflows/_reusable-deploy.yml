@@ -1,0 +1,55 @@
+name: Deploy (reutilizável)
+
+# Workflow reutilizável (workflow_call): ponto único de implantação, parametrizado
+# por ambiente. Chamado por release.yml (homolog) e prd.yml (produção), sempre
+# depois do build ter passado — nunca dispara sozinho.
+#
+# Estado atual: todo bot RPA do Grupo Figueiredo roda no Kestra, orquestrador
+# fora deste repositório, e NENHUM bot da organização automatiza este passo
+# hoje — o flow de referência (kestra/bot.yml) é aplicado manualmente na UI do
+# Kestra (ver README, seção Kestra). Este job existe para não deixar a
+# implantação invisível na pipeline: confirma que o flow de referência existe e
+# expõe o Environment já provisionado pelo `create` (`release`/`prd`, com as
+# credenciais da API V2 do ambiente) para quando a automação real existir. Sem
+# chamada de API nem consumo de secret real.
+on:
+  workflow_call:
+    inputs:
+      ambiente:
+        description: "homolog | production"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    # `ambiente` é o input (homolog|production); `release`/`prd` são os
+    # Environments provisionados pelo `create` (ServicoEnvironmentsGitHub).
+    environment: ${{ inputs.ambiente == 'production' && 'prd' || 'release' }}
+    concurrency:
+      group: deploy-${{ inputs.ambiente }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verificar flow de referência do Kestra
+        run: |
+          if [ ! -f kestra/bot.yml ]; then
+            echo "kestra/bot.yml não encontrado — nada a implantar ainda."
+            exit 0
+          fi
+          echo "Flow de referência encontrado: kestra/bot.yml"
+
+      # TODO(tech lead): implantação automática no Kestra.
+      # Hoje nenhum bot do Grupo Figueiredo automatiza este passo — o flow em
+      # kestra/bot.yml é aplicado manualmente na UI do Kestra. Quando a
+      # automação existir (API do Kestra + secrets KESTRA_URL/KESTRA_TOKEN
+      # neste Environment), troque este passo por uma chamada real. Até lá,
+      # só documenta o ponto de extensão, sem efeito colateral.
+      - name: Deploy no Kestra (pendente — ver TODO acima)
+        run: |
+          echo "Deploy automático no Kestra ainda não implementado."
+          echo "Aplique kestra/bot.yml manualmente na UI do Kestra (ambiente: ${{ inputs.ambiente }})."

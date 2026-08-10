@@ -1,0 +1,50 @@
+name: automacao-valida-origem-release
+
+# Garante que toda release/* nasceu da dev - nunca de main, de outra release
+# ou de qualquer outro ponto.
+#
+# Limite real do GitHub: rulesets nao tem como bloquear a CRIACAO de uma
+# branch com base em "de onde ela veio" (a regra "creation" so sabe
+# permitir/proibir criar, nao checar origem - isso so existe para o PULL
+# REQUEST, comparando head x base, o que nao existe numa criacao de branch).
+# Por isso a defesa aqui e reativa, nao preventiva: ao detectar que uma
+# release/* nao nasceu da dev, o workflow apaga a branch imediatamente.
+#
+# Como detecta: toda alteracao feita SO pelo automacao-versiona-por-label.yml
+# ou pelo job "versionar" de release.yml (o commit de incremento de versao) e
+# assinada pelo autor "versionamento-bot". Se a release/* tiver algum commit
+# que a dev nao tem E que nao seja desse bot, ela nao pode ter nascido de um
+# "checkout -b release/x dev" limpo - ou nasceu de outro lugar (ex.: main),
+# ou alguem commitou nela algo que nao devia.
+on:
+  create
+
+permissions:
+  contents: write
+
+jobs:
+  validar-origem:
+    if: github.ref_type == 'branch' && startsWith(github.ref_name, 'release/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Confere se a release nasceu da dev
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          git fetch origin dev "$BRANCH"
+
+          autores=$(git log "origin/dev..origin/$BRANCH" --format=%an | sort -u)
+
+          if [ -z "$autores" ] || [ "$autores" = "versionamento-bot" ]; then
+            echo "OK: $BRANCH nasceu da dev."
+            exit 0
+          fi
+
+          echo "::error::$BRANCH não parece ter nascido da dev (tem commit de: $autores). Apagando a branch."
+          git push origin --delete "$BRANCH"
+          exit 1
