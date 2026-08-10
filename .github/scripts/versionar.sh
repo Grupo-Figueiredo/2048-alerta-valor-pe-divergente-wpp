@@ -32,6 +32,19 @@ set -euo pipefail
 PYPROJECT="pyproject.toml"
 BRANCH="${BRANCH_NOME:?defina BRANCH_NOME com o nome da branch}"
 
+# Proteção contra loop: o commit de bump é empurrado com um PAT de verdade
+# (GH_TOKEN), que dispara o próprio workflow de novo (diferente do
+# GITHUB_TOKEN padrão). Sem tag de produção ainda, "desde a última tag" cai
+# pra "desde o início do histórico" - o mesmo commit de breaking change seria
+# encontrado de novo a cada rodada, bumpando sem parar (visto na prática:
+# 1.0.0 -> 2.0.0 -> 3.0.0...). Se o commit mais recente já é um bump nosso,
+# não há nada novo a versionar - para aqui.
+if git log -1 --format=%s | grep -qE '^chore: versiona [0-9]+\.[0-9]+\.[0-9]+ \('; then
+  echo "Commit mais recente já é um bump de versão (evita loop) - nada a fazer."
+  echo "incrementou=false" >>"$GITHUB_OUTPUT"
+  exit 0
+fi
+
 git config --global url."https://${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
 git config user.name "versionamento-bot"
 git config user.email "actions@github.com"
