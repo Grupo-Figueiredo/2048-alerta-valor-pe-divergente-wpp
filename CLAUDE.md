@@ -272,6 +272,17 @@ arquivos.baixar("RPA/190/entrada.csv", "entrada.csv")
      artificial de dígito.
   4. Usa `secrets.GH_TOKEN` (PAT do Admin) para o push e para o `gh` CLI consultar a label
      do PR.
+- **Pré-release em `release/*` (`-hml.N`):** enquanto o PR da `release/*` para a `main` não
+  é aprovado por um code owner, `versionar.sh` grava a versão como pré-release
+  (`1.0.0-hml.1`, `1.0.0-hml.2`, ...) em vez da versão final — cada push adicional na mesma
+  `release/*` (ex.: correção depois de feedback de homologação) incrementa o contador. Quando
+  o PR é aprovado, `automacao-finaliza-versao-aprovada.yml` remove o sufixo `-hml.N` e grava
+  a versão final (`1.0.0`) direto na `release/*` — como o merge para a `main` é sempre
+  squash, o commit que chega lá já nasce limpo, sem precisar de nenhum push direto na `main`.
+  `fix/hotfix-*` nunca passa por pré-release (vai direto pra versão final).
+- O push do bump usa um PAT de verdade (`GH_TOKEN`, não o `GITHUB_TOKEN` padrão), o que
+  dispara o próprio `release.yml` de novo — `versionar.sh` detecta se o commit mais recente
+  já é um bump seu e não faz nada, pra não entrar em loop de incremento.
 - Uma `release/*` só é aceita se nascer da `dev` — `automacao-valida-origem-release.yml`
   apaga na hora qualquer `release/*` criada de outro lugar (checa se os commits exclusivos
   desde a `dev` são só do `versionamento-bot`).

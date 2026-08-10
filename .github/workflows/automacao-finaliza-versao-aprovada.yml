@@ -1,0 +1,38 @@
+name: Automação - finaliza versão ao aprovar PR para a main
+
+# Enquanto o PR de release/* para a main não é aprovado, a versão em
+# pyproject.toml fica como pre-release ("1.0.0-hml.1", "1.0.0-hml.2", ...
+# ver .github/scripts/versionar.sh). Quando um code owner aprova o PR,
+# este workflow remove o sufixo "-hml.N" e grava a versão final (ex.:
+# "1.0.0") direto na release/* - não na main.
+#
+# Como o merge para a main é sempre squash (ver ruleset da main), o commit
+# que chega lá já nasce com a versão limpa - não é preciso nenhum push
+# direto na main para isso, então o ruleset dela (mais restrito que o da
+# release/*) não precisa de nenhum ajuste de bypass.
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: write
+
+jobs:
+  finalizar:
+    if: >-
+      github.event.review.state == 'approved' &&
+      github.event.pull_request.base.ref == 'main' &&
+      startsWith(github.event.pull_request.head.ref, 'release/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Remover sufixo de pré-release (-hml.N)
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          BRANCH_NOME: ${{ github.event.pull_request.head.ref }}
+          FINALIZAR: "true"
+        run: bash .github/scripts/versionar.sh
