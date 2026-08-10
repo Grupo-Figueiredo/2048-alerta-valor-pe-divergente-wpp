@@ -23,6 +23,8 @@ class Configuracoes:
     API_PASSWORD: str | None = os.getenv("API_PASSWORD")
     # Timeout (s) de toda chamada HTTP à API V2 — usado por `utils.ClienteApiV2`.
     API_TIMEOUT: int = int(os.getenv("API_TIMEOUT", "60"))
+    # Timeout (s) da chamada à Z-API — usado por `ServicoNotificaWhatsapp`.
+    ZAPI_TIMEOUT: int = int(os.getenv("ZAPI_TIMEOUT", "30"))
 
     # Identificação do bot (contrato com o logger).
     NOME_SERVICO: str = "alerta-valor-pe-divergente-wpp"
