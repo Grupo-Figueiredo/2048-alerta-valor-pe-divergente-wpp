@@ -12,7 +12,11 @@ permissions:
 
 jobs:
   qualidade:
-    runs-on: self-hosted
+    # GitHub-hosted (não self-hosted): só valida lint/segurança, não precisa de
+    # rede interna (diferente de build/deploy, que empurram pro registry
+    # 10.0.0.72:5000). ubuntu-latest já vem com python3-venv/ensurepip, que o
+    # runner self-hosted as05prd não tinha - causava falha no pip-audit.
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4

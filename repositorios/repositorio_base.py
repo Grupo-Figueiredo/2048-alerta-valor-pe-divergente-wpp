@@ -48,14 +48,29 @@ class RepositorioBase:
 
     @staticmethod
     def _linhas_como_dicts(resultado: dict[str, Any]) -> list[dict[str, Any]]:
-        """Converte o par `columns`/`rows` da API V2 em uma lista de dicts.
+        """Valida as `rows` da API V2 - já vêm como `list[dict]` (chave = nome da coluna).
 
-        `strict=True`: se a API devolver uma linha com tamanho diferente de
-        `columns`, falha alto em vez de truncar dados silenciosamente.
+        DIVERGE DO TEMPLATE DO SDK (`sdk-expfig`) DE PROPÓSITO: a versão gerada faz
+        `dict(zip(columns, linha))`, o que pressupõe `rows` como lista de listas.
+        A API V2 real devolve `rows` como lista de **dicts** — `zip` nesse caso itera
+        as chaves do dict (que batem com `columns`, na mesma ordem), produzindo
+        `{coluna: coluna}` em vez de `{coluna: valor}`, corrompendo todo `SELECT`
+        silenciosamente (confirmado direto contra a API V2 real). Reporte isso pra
+        quem mantém o `sdk-expfig` — este arquivo é guardado/idêntico nos 7
+        arquétipos, então o bug afeta todo bot gerado por ele.
+
+        Confere que cada linha tem exatamente as chaves declaradas em `columns`;
+        se divergir, falha alto em vez de processar dado incompleto silenciosamente.
         """
-        colunas = resultado.get("columns") or []
+        colunas = set(resultado.get("columns") or [])
         linhas = resultado.get("rows") or []
-        return [dict(zip(colunas, linha, strict=True)) for linha in linhas]
+        for linha in linhas:
+            if set(linha.keys()) != colunas:
+                raise ErroApiV2(
+                    f"Linha da API V2 com colunas divergentes do esperado: "
+                    f"esperado {sorted(colunas)}, recebido {sorted(linha.keys())}."
+                )
+        return linhas
 
     @classmethod
     def _escapar(cls, valor: str) -> str:
