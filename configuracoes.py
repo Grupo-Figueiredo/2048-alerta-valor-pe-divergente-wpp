@@ -2,7 +2,11 @@ import os
 import socket
 from typing import Any
 
+from dotenv import load_dotenv
+
 from utils.credenciais import Credenciais
+
+load_dotenv()  # carrega o `.env` para os.environ antes das leituras abaixo (não sobrescreve vars já exportadas no shell)
 
 
 class Configuracoes:
