@@ -6,6 +6,9 @@ from typing import Any
 from configuracoes import Configuracoes
 from repositorios.repositorio_base import RepositorioBase
 
+# Filiais Aperam (`lg_filial`) monitoradas por este bot.
+FILIAIS_APERAM = (15, 2)
+
 
 class RepositorioAutomData(RepositorioBase):
     """Repositório da connection `autom_data`."""
@@ -18,8 +21,9 @@ class RepositorioAutomData(RepositorioBase):
         return "RepositorioAutomData - conexão autom_data"
 
     def obter_pes_para_verificar(self) -> list[dict[str, Any]]:
-        """PEs das filiais 15/2, criados no último dia, com valor informado e ainda não validados."""
-        sql = """
+        """PEs das filiais Aperam, criados no último dia, com valor informado e ainda não validados."""
+        filiais = ", ".join(str(int(filial)) for filial in FILIAIS_APERAM)
+        sql = f"""
             SELECT
                 id,
                 documento_transporte,
@@ -29,7 +33,7 @@ class RepositorioAutomData(RepositorioBase):
             FROM
                 cte_value_audit
             WHERE
-                lg_filial in (15, 2)
+                lg_filial in ({filiais})
             AND
                 data_criacao >= CURRENT_DATE - INTERVAL '1 day'
             AND
@@ -37,7 +41,7 @@ class RepositorioAutomData(RepositorioBase):
             AND
                 valor_total_cte_embarcador <> 0
             AND valor_validado is null
-        """
+        """  # nosec B608
         return self._executar_consulta(sql)
 
     def atualizar_auditoria_cte(

@@ -1,12 +1,13 @@
 # 2048 - Alerta de Valor de PE Divergente (WhatsApp)
 
-Bot RPA (arquétipo **integracao-api-figueiredo** — dados via API V2 + alerta via WhatsApp/Z-API)
-do Grupo Figueiredo.
+Bot RPA (arquétipo **integracao-api-figueiredo** — dados e alerta via WhatsApp, ambos pela
+API V2) do Grupo Figueiredo.
 
 Verifica, para cada Pedido de Embarque (PE) da Aperam pendente de validação, se o valor total
 do CTE informado pelo embarcador confere com o CTE oficial (`sgt20.gr_cte`, fonte
 Protheus/TOTVS). Quando diverge, atualiza a auditoria em `cte_value_audit` e envia um alerta
-via WhatsApp (Z-API).
+via WhatsApp (`POST /v2/notificacoes/whatsapp/` da própria API V2 — a Z-API mora do outro lado,
+resolvida pela API a partir do cofre dela).
 
 ## Estrutura
 
@@ -20,7 +21,7 @@ aplicacao/
 │   └── excecao_negocio.py         # ExcecaoNegocio — erro de negócio recuperável
 └── servicos/
     ├── servico_compara_valores.py        # Compara o CTE do embarcador com o CTE oficial (gr_cte)
-    └── servico_notifica_whatsapp.py      # Monta e envia o alerta via Z-API (requests direto)
+    └── servico_notifica_whatsapp.py      # Monta e envia o alerta via POST /v2/notificacoes/whatsapp/
 repositorios/                  # Acesso a dados via API V2 (/v2/query/)
 ├── repositorio_base.py         # Executor genérico de SELECT/INSERT/UPDATE/DELETE
 ├── repositorio_autom_data.py    # connection: autom_data (auditoria de CTE)
@@ -30,16 +31,22 @@ utils/                          # Infraestrutura sobre a API V2 (cliente/JWT, lo
 ```
 
 Veja [CLAUDE.md](./CLAUDE.md) para as regras de arquitetura e convenções deste projeto. A
-chamada à Z-API mora em `aplicacao/servicos/` (não em `repositorios/`, reservado à API V2) —
-mesmo padrão do arquétipo irmão `integracao-requests` para integrações com terceiros.
+notificação de WhatsApp é hoje uma rota da própria API V2 (`POST /v2/notificacoes/whatsapp/`,
+que fala com a Z-API do outro lado) — por isso `ServicoNotificaWhatsapp` chama
+`ClienteApiV2.requisitar(...)` diretamente (mesmo padrão de `utils.Logger`/`utils.Arquivos` para
+"qualquer outra rota da API V2"), e não `requests` contra um terceiro. Não é uma chamada de
+`repositorios/` porque não é uma query em `/v2/query/`.
 
 ## Fluxo de negócio
 
 1. Busca em `autom_data.cte_value_audit` os PEs das filiais 15/2, criados no último dia, com
    valor total informado e ainda não validados (`valor_validado is null`).
-2. Para cada PE, busca o CTE oficial em `sgt20.gr_cte` pelo `documento_transporte`. Se não
-   encontrar (CTE ainda não emitido/sincronizado), **pula o PE sem gravar nada** - ele continua
-   com `valor_validado is null` e é tentado de novo na próxima execução.
+2. Para cada PE, busca o CTE oficial em `sgt20.gr_cte` pelo `documento_transporte` — só
+   considera CTE `ativo`, não `deletado` e com `id_rejeicao_cte = 100` (exclui cancelado,
+   recusado ou inativo), pegando o mais recente (`order by id desc`) se houver mais de um. Se
+   não encontrar (CTE ainda não emitido/sincronizado, ou só há CTE cancelado/recusado), **pula
+   o PE sem gravar nada** - ele continua com `valor_validado is null` e é tentado de novo na
+   próxima execução.
 3. Se encontrar, compara `valor_total_cte_embarcador` com `gr_cte.valor_total_frete`
    (tolerância de R$ 1,00). Se divergente, envia alerta via WhatsApp; sempre grava
    `valor_liquido_cte_figueiredo`/`valor_impostos_cte_figueiredo`/`valor_total_cte_figueiredo`
@@ -53,18 +60,20 @@ cp .env.example .env
 
 | Variável | Descrição |
 |---|---|
-| `API_BASE_URL`/`API_USERNAME`/`API_PASSWORD` | Credenciais da **API V2** (`/v2/query/`) — dados + logs + credenciais |
-| `API_TIMEOUT` | Timeout (segundos) das chamadas à API V2 (padrão 60) |
-| `ZAPI_TIMEOUT` | Timeout (segundos) da chamada à Z-API (padrão 30) |
+| `API_BASE_URL`/`API_USERNAME`/`API_PASSWORD` | Credenciais da **API V2** (`/v2/query/`, notificação WhatsApp, logs, credenciais) |
+| `API_TIMEOUT` | Timeout (segundos) das chamadas à API V2 — inclusive `/v2/notificacoes/whatsapp/` (padrão 60) |
+| `WHATSAPP_ALERTA_DESTINO` | Telefone ou id de grupo que recebe o alerta (padrão `120363424569399839-group`) |
 | `ENVIRONMENT` | `development`/`production` |
 
-**Credencial `whatsapp_alerta_pe` na API V2** (`configuracoes.obter_credencial("whatsapp_alerta_pe")`,
-lida por `ServicoNotificaWhatsapp`) — precisa ser cadastrada manualmente (`/v2/credenciais/`),
-no formato:
+O usuário da API V2 (`API_USERNAME`) precisa ter a role **`v2_notificacoes_whatsapp`** liberada
+pelo time de infraestrutura, além das roles de dados/logs já usadas — sem ela `POST
+/v2/notificacoes/whatsapp/` responde `403`.
 
-```json
-{"url": "https://api.z-api.io/instances/<id>/token/<token>/send-text", "client_token": "...", "destino": "<telefone-ou-grupo>"}
-```
+`WHATSAPP_ALERTA_DESTINO` é lido direto de `Configuracoes` (`.env`), não de
+`obter_credencial`: não é segredo de sistema externo (não há cadastro de
+`whatsapp_alerta_pe` em `/v2/credenciais/`), é só o destino do alerta. A Z-API em si
+(URL/token do provedor) é resolvida do lado da API V2, no cofre dela — o bot não guarda
+esse segredo.
 
 ## Hook de pre-commit (lint)
 
@@ -129,6 +138,7 @@ liberar acesso no ambiente de destino.
 
 ## Pendências manuais
 
-- [ ] Cadastrar a credencial `whatsapp_alerta_pe` na API V2 (ver seção Configuração).
+- [ ] Confirmar/ajustar `WHATSAPP_ALERTA_DESTINO` por ambiente, se o padrão do código não servir (ver seção Configuração).
+- [ ] Liberar a role `v2_notificacoes_whatsapp` para o `API_USERNAME` deste bot.
 - [ ] Ativar o hook de pre-commit (`git config core.hooksPath .githooks`).
 - [ ] Ajustar o cron real em `kestra/bot.yml` (hoje com o placeholder do scaffold).
