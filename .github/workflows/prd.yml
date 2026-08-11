@@ -11,7 +11,11 @@ on:
     branches: ["main"]
 
 permissions:
-  contents: read
+  # `write`: `_reusable-build.yml` cria a tag `v<versão>` e a release do GitHub
+  # após o push da imagem. Sem isso, o GitHub rejeita a execução inteira (a
+  # permissão do workflow chamado não pode exceder a do workflow principal) -
+  # falha com `startup_failure` antes de qualquer job rodar.
+  contents: write
 
 concurrency:
   group: prd-${{ github.ref }}

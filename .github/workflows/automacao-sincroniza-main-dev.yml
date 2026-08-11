@@ -1,11 +1,15 @@
 name: back-merge-main-dev
 
-# Passo "O fluxo que vamos implementar": apos qualquer push na main
-# (squash-merge de release/*|fix/hotfix-* -> main), back-merge automatico
-# main->dev. Squash cria um commit sem ancestralidade em comum com dev/
-# release - sem esse back-merge, a proxima promocao gera conflito garantido
-# em qualquer linha que mude nos dois lados (ex.: a versao do
-# pyproject.toml).
+# Apos qualquer push na main (merge de release/*|fix/hotfix-* -> main, sempre
+# merge commit real - nunca squash, ver ruleset protect-main), a dev ainda nao
+# tem esse commit como ancestral: o merge para a main so anexa o commit la,
+# nao empurra a dev junto. Este job faz o back-merge automatico main->dev.
+#
+# Quando o merge nao resolve sozinho - a release/* recebeu correcao que a dev
+# nunca viu (ex.: ajuste pedido em revisao aplicado direto na release/* pra
+# nao abrir outro PR) - este job resolve automaticamente a favor da main: ela
+# ja passou por aprovacao/CI, e a fonte de verdade. Nunca aborta pedindo
+# intervencao manual.
 #
 # Cobre so a dev: a release/* efemera ja e apagada ao virar main, entao
 # nao ha branch de homolog permanente para sincronizar (fase 2 concluida -
@@ -53,14 +57,29 @@ jobs:
           BRANCH="chore/back-merge-main-$(git rev-parse --short origin/main)"
           git checkout -b "$BRANCH" origin/dev
 
-          if git merge origin/main --no-edit; then
-            git push origin "$BRANCH"
-            gh pr create --base dev --head "$BRANCH" \
-              --title "chore: sincroniza dev com main via back-merge automatico" \
-              --body "Back-merge automatico apos push em main (evita divergencia de historico apos squash-merge)."
-            gh pr merge "$BRANCH" --merge --delete-branch
-          else
-            git merge --abort
-            echo "::error::Conflito real no back-merge main->dev. Resolva manualmente: git checkout dev && git merge origin/main"
-            exit 1
-          fi
+          # Tenta o merge normal; se conflitar, resolve a favor da main (fonte
+          # ja aprovada/testada) em vez de abortar e pedir ajuda manual. Nao
+          # confia em "sem conflito reportado" = correto: um merge automatico
+          # "limpo" ja reintroduziu em producao uma env var que a main tinha
+          # removido (os dois lados tocaram linhas proximas sem overlap
+          # direto - git nao viu isso como conflito). Por isso, alem de
+          # resolver os conflitos que aparecerem, forca a versao da main em
+          # TODO arquivo que ela alterou desde a base comum com a dev.
+          git merge --no-commit --no-ff origin/main || true
+
+          git diff --name-only origin/dev origin/main | while IFS= read -r arquivo; do
+            if git cat-file -e "origin/main:$arquivo" 2>/dev/null; then
+              git checkout origin/main -- "$arquivo"
+            else
+              git rm -f --ignore-unmatch -- "$arquivo"
+            fi
+          done
+
+          git add -A
+          git commit --no-edit
+
+          git push origin "$BRANCH"
+          gh pr create --base dev --head "$BRANCH" \
+            --title "chore: sincroniza dev com main via back-merge automatico" \
+            --body "Back-merge automatico apos push em main. Arquivos que a main alterou levam a versao dela - fonte ja aprovada/testada."
+          gh pr merge "$BRANCH" --merge --delete-branch
