@@ -18,11 +18,13 @@
 # pre-release cortado neste ciclo (ver "Pre-release em release/*" abaixo),
 # caso em que o alvo (nova) e reaproveitado em vez de recalculado.
 #
-# Pre-release em release/* ("-hml.N"):
-#   Toda release/* so produz pre-release (ex.: 1.0.0-hml.1) ate o PR dela
+# Pre-release em release/* (".devN+hml"):
+#   Toda release/* so produz pre-release (ex.: 1.0.0.dev1+hml) ate o PR dela
 #   para a main ser aprovado por um code owner - so ai (FINALIZAR=true,
-#   chamado por automacao-finaliza-versao-aprovada.yml) o sufixo "-hml.N"
-#   e removido e a versao final (1.0.0) e gravada, direto na release/*.
+#   chamado por automacao-finaliza-versao-aprovada.yml) o sufixo ".devN+hml"
+#   e removido e a versao final (1.0.0) e gravada, direto na release/*. O
+#   formato segue PEP 440 (versao de pacote Python, nao SemVer puro) -
+#   "1.0.0-hml.N" nao e uma versao valida (uv/hatchling rejeitam o pyproject.toml).
 #   Como o merge para a main e squash, a main so ve a versao ja limpa -
 #   nao precisa de nenhum push direto na main pra isso. fix/hotfix-* nunca
 #   passa por pre-release (vai direto pra versao final, urgencia).
@@ -53,20 +55,7 @@ BRANCH="${BRANCH_NOME:?defina BRANCH_NOME com o nome da branch}"
 FINALIZAR="${FINALIZAR:-false}"
 
 if [ "$FINALIZAR" != "true" ] &&
-  git log -1 --format=%s | grep -qE '^chore: versiona [0-9]+\.[0-9]+\.[0-9]+(-hml\.[0-9]+)? \('; then
-  echo "Commit mais recente já é um bump de versão (evita loop) - nada a fazer."
-  echo "incrementou=false" >>"$GITHUB_OUTPUT"
-  exit 0
-fi
-
-# Proteção contra loop: o commit de bump é empurrado com um PAT de verdade
-# (GH_TOKEN), que dispara o próprio workflow de novo (diferente do
-# GITHUB_TOKEN padrão). Sem tag de produção ainda, "desde a última tag" cai
-# pra "desde o início do histórico" - o mesmo commit de breaking change seria
-# encontrado de novo a cada rodada, bumpando sem parar (visto na prática:
-# 1.0.0 -> 2.0.0 -> 3.0.0...). Se o commit mais recente já é um bump nosso,
-# não há nada novo a versionar - para aqui.
-if git log -1 --format=%s | grep -qE '^chore: versiona [0-9]+\.[0-9]+\.[0-9]+ \('; then
+  git log -1 --format=%s | grep -qE '^chore: versiona [0-9]+\.[0-9]+\.[0-9]+(\.dev[0-9]+\+hml)? \('; then
   echo "Commit mais recente já é um bump de versão (evita loop) - nada a fazer."
   echo "incrementou=false" >>"$GITHUB_OUTPUT"
   exit 0
@@ -80,11 +69,17 @@ git fetch origin main --tags --quiet
 
 atual=$(grep -m1 '^version' "$PYPROJECT" | cut -d'"' -f2)
 
-# Ja existe um pre-release cortado neste ciclo (ex.: "1.0.0-hml.2")? Reaproveita
-# o alvo (nova) em vez de recalcular - recalcular leria o proprio "1.0.0" ja
-# gravado como base e bumparia de novo por cima (o mesmo bug do loop, so que
-# manifestado em duas chamadas em vez de N).
-if [[ "$atual" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-hml\.([0-9]+)$ ]]; then
+# pyproject.toml segue PEP 440 (versao de pacote Python), nao SemVer puro -
+# "1.0.0-hml.2" nao e uma versao valida (uv/hatchling rejeitam). O pre-release
+# usa o segmento .devN do proprio PEP 440 (ordena como menor que a versao
+# final, ao contrario de um "local version" via "+") com um rotulo local
+# "+hml" so pra ficar legivel: "1.0.0.dev2+hml".
+#
+# Ja existe um pre-release cortado neste ciclo (ex.: "1.0.0.dev2+hml")?
+# Reaproveita o alvo (nova) em vez de recalcular - recalcular leria o proprio
+# "1.0.0" ja gravado como base e bumparia de novo por cima (o mesmo bug do
+# loop, so que manifestado em duas chamadas em vez de N).
+if [[ "$atual" =~ ^([0-9]+\.[0-9]+\.[0-9]+)\.dev([0-9]+)\+hml$ ]]; then
   nova="${BASH_REMATCH[1]}"
   contador="${BASH_REMATCH[2]}"
   echo "Pre-release já cortado neste ciclo - reaproveitando alvo $nova (contador atual: $contador)"
@@ -158,7 +153,7 @@ fi
 # release/* so vira versao final quando FINALIZAR=true (aprovacao do PR pela
 # main); fix/hotfix-* nunca tem pre-release - vai direto pra versao final.
 if [[ "$BRANCH" == release/* ]] && [ "$FINALIZAR" != "true" ]; then
-  final="${nova}-hml.$((contador + 1))"
+  final="${nova}.dev$((contador + 1))+hml"
 else
   final="$nova"
 fi
