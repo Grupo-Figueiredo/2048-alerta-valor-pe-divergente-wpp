@@ -1,30 +1,34 @@
-"""Monta e envia a mensagem de alerta de PE com valor divergente via WhatsApp (Z-API).
+"""Monta e envia a mensagem de alerta de PE com valor divergente via WhatsApp.
 
-Diferente dos `repositorios/` (que falam com a API V2), este serviço fala com um
-sistema **externo** ao Grupo Figueiredo (Z-API) — por isso a chamada HTTP mora
-aqui, em `aplicacao/servicos/`, e não em `repositorios/`.
+Usa `POST /v2/notificacoes/whatsapp/`, rota própria da API V2 (a Z-API mora do
+outro lado, resolvida pela API a partir do cofre dela) — não é mais uma
+integração direta com terceiro. Por isso a chamada usa
+`ClienteApiV2.requisitar` (mesmo padrão de `utils.Logger`/`utils.Arquivos` para
+"qualquer outra rota da API V2" descrito no `CLAUDE.md`), e não `requests`
+direto contra a Z-API.
 """
 
 from decimal import Decimal
 from typing import Any
 
-import requests
-
 from configuracoes import Configuracoes
+from utils.cliente_api_v2 import ClienteApiV2, ErroApiV2
 
 _SISTEMA_CREDENCIAL = "whatsapp_alerta_pe"
+_TIPO_DESTINATARIO_TELEFONE = "telefone"
 
 
 class ErroNotificacaoWhatsapp(Exception):
-    """Falha de infraestrutura ao notificar via WhatsApp (Z-API)."""
+    """Falha de infraestrutura ao notificar via WhatsApp (API V2)."""
 
 
 class ServicoNotificaWhatsapp:
-    """Formata a mensagem de alerta e envia via Z-API.
+    """Formata a mensagem de alerta e envia via `POST /v2/notificacoes/whatsapp/`.
 
-    Credenciais (`url`, `client_token`, `destino`) vêm da API V2
+    O destinatário (telefone ou id de grupo, ex.: `<id>-group`) vem da
+    credencial `whatsapp_alerta_pe` na API V2
     (`configuracoes.obter_credencial("whatsapp_alerta_pe")`) — nunca hardcoded
-    no código nem lidas do `.env`.
+    no código nem lido do `.env`.
     """
 
     def __init__(self, configuracoes: Configuracoes):
@@ -42,17 +46,17 @@ class ServicoNotificaWhatsapp:
         valor_frete_total_calculado: Decimal,
         valor_total_cte_embarcador: Decimal,
     ) -> bool:
-        """Envia o alerta de divergência para o grupo de WhatsApp configurado.
+        """Envia o alerta de divergência para o destinatário configurado.
 
-        Retorna `True` se a Z-API confirmou o envio (HTTP 200).
+        Retorna `True` se a API V2 aceitou o envio (HTTP 200). Um `200` cobre o
+        resultado por destinatário — como só há um destinatário configurado,
+        aceitar o HTTP já basta; falha de infraestrutura vira `ErroNotificacaoWhatsapp`.
         """
         credenciais: dict[str, Any] = self._configuracoes.obter_credencial(_SISTEMA_CREDENCIAL)
-        url = credenciais.get("url")
-        client_token = credenciais.get("client_token")
         destino = credenciais.get("destino")
-        if not url or not client_token or not destino:
+        if not destino:
             raise ErroNotificacaoWhatsapp(
-                f"Credencial incompleta para o sistema {_SISTEMA_CREDENCIAL!r} — esperado url/client_token/destino."
+                f"Credencial incompleta para o sistema {_SISTEMA_CREDENCIAL!r} — esperado 'destino'."
             )
 
         mensagem = (
@@ -63,10 +67,22 @@ class ServicoNotificaWhatsapp:
             f"⚠️ *Divergência identificada automaticamente pelo robô de monitoramento.*"
         )
 
-        resposta = requests.post(
-            url,
-            json={"phone": destino, "message": mensagem},
-            headers={"client-token": client_token, "Content-Type": "application/json"},
-            timeout=self._configuracoes.ZAPI_TIMEOUT,
-        )
-        return resposta.status_code == 200
+        cliente = ClienteApiV2.instancia(self._configuracoes)
+        try:
+            resposta = cliente.requisitar(
+                "POST",
+                "/v2/notificacoes/whatsapp/",
+                dados={
+                    "destinatarios": [destino],
+                    "mensagem": mensagem,
+                    "tipo_destinatario": _TIPO_DESTINATARIO_TELEFONE,
+                },
+            )
+        except ErroApiV2 as erro:
+            raise ErroNotificacaoWhatsapp(f"Não foi possível contatar a rota de notificação: {erro}") from erro
+
+        if resposta.status_code != 200:
+            raise ErroNotificacaoWhatsapp(
+                f"Falha ao enviar alerta via WhatsApp (HTTP {resposta.status_code}): {resposta.text[:200]}"
+            )
+        return True
