@@ -45,9 +45,7 @@ def main(logger: Logger, configuracoes: Configuracoes) -> None:
         cte = repositorio_sgt20.obter_cte_por_documento(documento_transporte=documento_transporte)
         if not cte:
             mensagem = "Documento não encontrado em gr_cte - será tentado novamente na próxima execução."
-            logger.registrar(
-                tipo="warning", tarefa=TASK_PROCESSAR_PE, mensagem=f"DT={documento_transporte}: {mensagem}"
-            )
+            logger.registrar(tipo="info", tarefa=TASK_PROCESSAR_PE, mensagem=f"DT={documento_transporte}: {mensagem}")
             return
 
         dados_cte = cte[0]

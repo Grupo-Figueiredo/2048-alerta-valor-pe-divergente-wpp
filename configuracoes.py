@@ -41,7 +41,7 @@ class Configuracoes:
     # — usado por `ServicoNotificaWhatsapp`. Não é credencial de sistema externo
     # (não existe cadastro de "whatsapp_alerta_pe" em `/v2/credenciais/`), por
     # isso vem direto do `.env`, não de `obter_credencial`.
-    WHATSAPP_ALERTA_DESTINO: str | None = os.getenv("WHATSAPP_ALERTA_DESTINO")
+    WHATSAPP_ALERTA_DESTINO: str = os.getenv("WHATSAPP_ALERTA_DESTINO", "120363424569399839-group")
 
     def obter_credencial(self, sistema: str) -> dict[str, Any]:
         """Credencial de um sistema externo, resolvida pela API V2.

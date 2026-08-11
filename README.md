@@ -41,9 +41,12 @@ que fala com a Z-API do outro lado) — por isso `ServicoNotificaWhatsapp` chama
 
 1. Busca em `autom_data.cte_value_audit` os PEs das filiais 15/2, criados no último dia, com
    valor total informado e ainda não validados (`valor_validado is null`).
-2. Para cada PE, busca o CTE oficial em `sgt20.gr_cte` pelo `documento_transporte`. Se não
-   encontrar (CTE ainda não emitido/sincronizado), **pula o PE sem gravar nada** - ele continua
-   com `valor_validado is null` e é tentado de novo na próxima execução.
+2. Para cada PE, busca o CTE oficial em `sgt20.gr_cte` pelo `documento_transporte` — só
+   considera CTE `ativo`, não `deletado` e com `id_rejeicao_cte = 100` (exclui cancelado,
+   recusado ou inativo), pegando o mais recente (`order by id desc`) se houver mais de um. Se
+   não encontrar (CTE ainda não emitido/sincronizado, ou só há CTE cancelado/recusado), **pula
+   o PE sem gravar nada** - ele continua com `valor_validado is null` e é tentado de novo na
+   próxima execução.
 3. Se encontrar, compara `valor_total_cte_embarcador` com `gr_cte.valor_total_frete`
    (tolerância de R$ 1,00). Se divergente, envia alerta via WhatsApp; sempre grava
    `valor_liquido_cte_figueiredo`/`valor_impostos_cte_figueiredo`/`valor_total_cte_figueiredo`
@@ -59,7 +62,7 @@ cp .env.example .env
 |---|---|
 | `API_BASE_URL`/`API_USERNAME`/`API_PASSWORD` | Credenciais da **API V2** (`/v2/query/`, notificação WhatsApp, logs, credenciais) |
 | `API_TIMEOUT` | Timeout (segundos) das chamadas à API V2 — inclusive `/v2/notificacoes/whatsapp/` (padrão 60) |
-| `WHATSAPP_ALERTA_DESTINO` | Telefone ou id de grupo (ex.: `120363424569399839-group`) que recebe o alerta |
+| `WHATSAPP_ALERTA_DESTINO` | Telefone ou id de grupo que recebe o alerta (padrão `120363424569399839-group`) |
 | `ENVIRONMENT` | `development`/`production` |
 
 O usuário da API V2 (`API_USERNAME`) precisa ter a role **`v2_notificacoes_whatsapp`** liberada
@@ -135,7 +138,7 @@ liberar acesso no ambiente de destino.
 
 ## Pendências manuais
 
-- [ ] Definir `WHATSAPP_ALERTA_DESTINO` no `.env` de cada ambiente (ver seção Configuração).
+- [ ] Confirmar/ajustar `WHATSAPP_ALERTA_DESTINO` por ambiente, se o padrão do código não servir (ver seção Configuração).
 - [ ] Liberar a role `v2_notificacoes_whatsapp` para o `API_USERNAME` deste bot.
 - [ ] Ativar o hook de pre-commit (`git config core.hooksPath .githooks`).
 - [ ] Ajustar o cron real em `kestra/bot.yml` (hoje com o placeholder do scaffold).
