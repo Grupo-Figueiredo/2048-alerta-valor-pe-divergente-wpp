@@ -3,5 +3,5 @@ autom_data,logs,process,write
 autom_data,logs,process,update
 autom_data,logs,logs,write
 autom_data,public,cte_value_audit,read
-autom_data,public,cte_value_audit,write
+autom_data,public,cte_value_audit,update
 sgt20,public,gr_cte,read

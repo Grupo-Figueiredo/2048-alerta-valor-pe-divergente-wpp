@@ -20,7 +20,7 @@ import traceback
 from datetime import datetime
 
 from aplicacao.excecoes import ExcecaoNegocio
-from aplicacao.servicos import ServicoComparaValores, ServicoNotificaWhatsapp
+from aplicacao.servicos import ErroNotificacaoWhatsapp, ServicoComparaValores, ServicoNotificaWhatsapp
 from configuracoes import Configuracoes
 from repositorios import RepositorioAutomData, RepositorioSgt20
 from utils import STATUS_RESSALVA, STATUS_SUCESSO, Logger
@@ -57,11 +57,23 @@ def main(logger: Logger, configuracoes: Configuracoes) -> None:
             mensagem = "Valores conferem."
         else:
             mensagem = "Valores divergentes! Alerta enviado via WPP."
-            servico_notifica_whatsapp.notificar_whatsapp(
-                documento_transporte=documento_transporte,
-                valor_frete_total_calculado=dados_cte["valor_total_frete"],
-                valor_total_cte_embarcador=pe["valor_total_cte_embarcador"],
-            )
+            try:
+                servico_notifica_whatsapp.notificar_whatsapp(
+                    documento_transporte=documento_transporte,
+                    valor_frete_total_calculado=dados_cte["valor_total_frete"],
+                    valor_total_cte_embarcador=pe["valor_total_cte_embarcador"],
+                )
+            except ErroNotificacaoWhatsapp as erro:
+                # Falha ao notificar não pode impedir a gravação da auditoria (ver
+                # docstring do módulo: "sempre grava") - senão o PE nunca sai de
+                # `valor_validado is null` enquanto o alerta continuar falhando.
+                mensagem = f"Valores divergentes! Falha ao enviar alerta via WPP: {erro}"
+                logger.registrar(
+                    tipo="error",
+                    tarefa=TASK_PROCESSAR_PE,
+                    mensagem=f"DT={documento_transporte}: falha ao notificar WhatsApp - {erro!s}",
+                    traceback=traceback.format_exc(),
+                )
         repositorio_autom_data.atualizar_auditoria_cte(
             id_registro=pe["id"],
             valor_liquido_figueiredo=dados_cte["valor_frete"],

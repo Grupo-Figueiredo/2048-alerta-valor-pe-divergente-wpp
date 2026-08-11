@@ -62,16 +62,25 @@ class ServicoNotificaWhatsapp:
             f"⚠️ *Divergência identificada automaticamente pelo robô de monitoramento.*"
         )
 
+        # A rota só aceita `multipart/form-data` (listas em campos repetidos, ex.:
+        # `destinatarios=a&destinatarios=b` - conferido no MCP `api-figueiredo`).
+        # `ClienteApiV2._requisitar` só monta multipart quando `arquivos` (o `files`
+        # do `requests`) é informado - com `dados` (`data=`) sozinho, `requests` manda
+        # `application/x-www-form-urlencoded`, fora do contrato documentado da rota.
+        # `(None, valor)` é o truque padrão do `requests` pra forçar multipart sem
+        # anexar nenhum arquivo de verdade.
+        campos_multipart: list[tuple[str, tuple[None, str]]] = [
+            ("destinatarios", (None, destino)),
+            ("mensagem", (None, mensagem)),
+            ("tipo_destinatario", (None, _TIPO_DESTINATARIO_TELEFONE)),
+        ]
+
         cliente = ClienteApiV2.instancia(self._configuracoes)
         try:
             resposta = cliente.requisitar(
                 "POST",
                 "/v2/notificacoes/whatsapp/",
-                dados={
-                    "destinatarios": [destino],
-                    "mensagem": mensagem,
-                    "tipo_destinatario": _TIPO_DESTINATARIO_TELEFONE,
-                },
+                arquivos=campos_multipart,
             )
         except ErroApiV2 as erro:
             raise ErroNotificacaoWhatsapp(f"Não foi possível contatar a rota de notificação: {erro}") from erro
