@@ -272,6 +272,20 @@ arquivos.baixar("RPA/190/entrada.csv", "entrada.csv")
      artificial de dígito.
   4. Usa `secrets.GH_TOKEN` (PAT do Admin) para o push e para o `gh` CLI consultar a label
      do PR.
+- **Tag de homologação em `release/*` (`vX.Y.Z-hml`):** a cada push numa `release/*`,
+  `versionar.sh` cria (ou move) uma tag `vX.Y.Z-hml` apontando pro commit mais novo -
+  marca o build de homologação, sem sufixo nenhum no `pyproject.toml` (que grava direto a
+  versão final `X.Y.Z`: é número de pacote Python, PEP 440, não aceita sufixo tipo
+  `-hml` - `uv`/`hatchling` recusam o arquivo). Se a mesma `release/*` receber mais um push
+  (ex.: correção depois de feedback de homologação), a versão já estabelecida é reaproveitada
+  (lida da própria tag `-hml` alcançável a partir do commit atual) em vez de recalculada - só
+  a tag se move. A tag final `vX.Y.Z` (sem sufixo) nasce sem nenhuma automação nova: é a
+  mesma que `_reusable-build.yml` já cria hoje, depois do build que só acontece no merge para
+  a `main` - que só é possível depois de aprovação de code owner. `fix/hotfix-*` nunca ganha
+  tag `-hml` (vai direto pra versão final, é urgência).
+- O push do bump usa um PAT de verdade (`GH_TOKEN`, não o `GITHUB_TOKEN` padrão), o que
+  dispara o próprio `release.yml` de novo — `versionar.sh` detecta se o commit mais recente
+  já é um bump seu e não faz nada, pra não entrar em loop de incremento.
 - Uma `release/*` só é aceita se nascer da `dev` — `automacao-valida-origem-release.yml`
   apaga na hora qualquer `release/*` criada de outro lugar (checa se os commits exclusivos
   desde a `dev` são só do `versionamento-bot`).
