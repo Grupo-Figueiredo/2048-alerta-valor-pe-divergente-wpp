@@ -21,10 +21,9 @@ class Configuracoes:
     API_BASE_URL: str | None = os.getenv("API_BASE_URL")
     API_USERNAME: str | None = os.getenv("API_USERNAME")
     API_PASSWORD: str | None = os.getenv("API_PASSWORD")
-    # Timeout (s) de toda chamada HTTP à API V2 — usado por `utils.ClienteApiV2`.
+    # Timeout (s) de toda chamada HTTP à API V2 — usado por `utils.ClienteApiV2`
+    # (inclusive a notificação de WhatsApp, hoje uma rota da própria API V2).
     API_TIMEOUT: int = int(os.getenv("API_TIMEOUT", "60"))
-    # Timeout (s) da chamada à Z-API — usado por `ServicoNotificaWhatsapp`.
-    ZAPI_TIMEOUT: int = int(os.getenv("ZAPI_TIMEOUT", "30"))
 
     # Identificação do bot (contrato com o logger).
     NOME_SERVICO: str = "alerta-valor-pe-divergente-wpp"
@@ -37,6 +36,12 @@ class Configuracoes:
 
     # Armazenamento padrão usado por `utils.Arquivos` (o `storage_name` de antes).
     ARMAZENAMENTO_PADRAO: str = os.getenv("ARMAZENAMENTO_PADRAO", "local")
+
+    # Destino do alerta de WhatsApp (telefone ou id de grupo, ex.: "<id>-group")
+    # — usado por `ServicoNotificaWhatsapp`. Não é credencial de sistema externo
+    # (não existe cadastro de "whatsapp_alerta_pe" em `/v2/credenciais/`), por
+    # isso vem direto do `.env`, não de `obter_credencial`.
+    WHATSAPP_ALERTA_DESTINO: str = os.getenv("WHATSAPP_ALERTA_DESTINO", "120363424569399839-group")
 
     def obter_credencial(self, sistema: str) -> dict[str, Any]:
         """Credencial de um sistema externo, resolvida pela API V2.
