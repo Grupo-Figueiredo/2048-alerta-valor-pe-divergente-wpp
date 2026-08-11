@@ -1,5 +1,13 @@
+"""Repositório da connection `autom_data` (Postgres): auditoria de CTE."""
+
+from decimal import Decimal
+from typing import Any
+
 from configuracoes import Configuracoes
 from repositorios.repositorio_base import RepositorioBase
+
+# Filiais Aperam (`lg_filial`) monitoradas por este bot.
+FILIAIS_APERAM = (15, 2)
 
 
 class RepositorioAutomData(RepositorioBase):
@@ -7,7 +15,66 @@ class RepositorioAutomData(RepositorioBase):
 
     def __init__(self, configuracoes: Configuracoes):
         self.configuracoes = configuracoes
-        self.db_name = "autom_data"
+        self.connection_name = "autom_data"
 
     def __str__(self) -> str:
         return "RepositorioAutomData - conexão autom_data"
+
+    def obter_pes_para_verificar(self) -> list[dict[str, Any]]:
+        """PEs das filiais Aperam, criados no último dia, com valor informado e ainda não validados."""
+        filiais = ", ".join(str(int(filial)) for filial in FILIAIS_APERAM)
+        sql = f"""
+            SELECT
+                id,
+                documento_transporte,
+                valor_liquido_cte_embarcador,
+                valor_impostos_cte_embarcador,
+                valor_total_cte_embarcador
+            FROM
+                cte_value_audit
+            WHERE
+                lg_filial in ({filiais})
+            AND
+                data_criacao >= CURRENT_DATE - INTERVAL '1 day'
+            AND
+                valor_total_cte_embarcador is not NULL
+            AND
+                valor_total_cte_embarcador <> 0
+            AND valor_validado is null
+        """  # nosec B608
+        return self._executar_consulta(sql)
+
+    def atualizar_auditoria_cte(
+        self,
+        id_registro: int,
+        valor_liquido_figueiredo: Decimal | float,
+        valor_impostos_figueiredo: Decimal | float,
+        valor_total_figueiredo: Decimal | float,
+        numero_cte: str,
+        extras: str,
+    ) -> int:
+        """Marca o PE como validado e grava os valores/número do CTE oficial (`sgt20.gr_cte`).
+
+        Só é chamado quando o documento **foi** encontrado em `gr_cte` - quando não é
+        encontrado, o chamador pula o PE sem gravar nada (fica `valor_validado is
+        null`, pra ser tentado de novo na próxima execução).
+
+        Os três valores passam por `Decimal(str(...))` - a API V2 devolve numéricos
+        como `float` (JSON), e interpolar `float` direto no SQL arrisca ruído de
+        ponto flutuante no literal (ex.: `7834.430000000001`).
+        """
+        valor_liquido_figueiredo = Decimal(str(valor_liquido_figueiredo))
+        valor_impostos_figueiredo = Decimal(str(valor_impostos_figueiredo))
+        valor_total_figueiredo = Decimal(str(valor_total_figueiredo))
+        sql = f"""
+            UPDATE cte_value_audit
+            SET
+                valor_validado = true,
+                valor_liquido_cte_figueiredo = {valor_liquido_figueiredo},
+                valor_impostos_cte_figueiredo = {valor_impostos_figueiredo},
+                valor_total_cte_figueiredo = {valor_total_figueiredo},
+                numero_cte = '{self._escapar(str(numero_cte))}',
+                extras = '{self._escapar(extras)}'
+            WHERE id = {int(id_registro)}
+        """  # nosec B608
+        return self._executar_escrita(sql)

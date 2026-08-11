@@ -1,10 +1,12 @@
 [project]
 name = "alerta-valor-pe-divergente-wpp"
-version = "0.0.1"
-description = "Add your description here"
+version = "1.0.0"
+description = "Bot RPA que verifica divergência entre o frete calculado e o valor do CTE do embarcador, alertando via WhatsApp"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "python-dotenv>=1.2.2",
+    "requests>=2.34.2",
 ]
 
 [dependency-groups]
@@ -27,3 +29,10 @@ quote-style = "double"
 [tool.isort]
 profile = "black"
 line_length = 120
+
+[tool.bandit]
+# B608 (SQL via f-string): a API V2 (`/v2/query/`) não aceita parâmetros vinculados — o
+# escape em `RepositorioBase._escapar()` é a defesa documentada (ver CLAUDE.md, seção
+# "Acesso a dados pela API V2"), não uma omissão. Sem essa exceção, todo repositório que
+# monta SQL (o padrão do próprio arquétipo integracao-api-figueiredo) reprova o CI.
+skips = ["B608"]
