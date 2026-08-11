@@ -272,14 +272,17 @@ arquivos.baixar("RPA/190/entrada.csv", "entrada.csv")
      artificial de dígito.
   4. Usa `secrets.GH_TOKEN` (PAT do Admin) para o push e para o `gh` CLI consultar a label
      do PR.
-- **Pré-release em `release/*` (`-hml.N`):** enquanto o PR da `release/*` para a `main` não
-  é aprovado por um code owner, `versionar.sh` grava a versão como pré-release
-  (`1.0.0-hml.1`, `1.0.0-hml.2`, ...) em vez da versão final — cada push adicional na mesma
-  `release/*` (ex.: correção depois de feedback de homologação) incrementa o contador. Quando
-  o PR é aprovado, `automacao-finaliza-versao-aprovada.yml` remove o sufixo `-hml.N` e grava
-  a versão final (`1.0.0`) direto na `release/*` — como o merge para a `main` é sempre
-  squash, o commit que chega lá já nasce limpo, sem precisar de nenhum push direto na `main`.
-  `fix/hotfix-*` nunca passa por pré-release (vai direto pra versão final).
+- **Tag de homologação em `release/*` (`vX.Y.Z-hml`):** a cada push numa `release/*`,
+  `versionar.sh` cria (ou move) uma tag `vX.Y.Z-hml` apontando pro commit mais novo -
+  marca o build de homologação, sem sufixo nenhum no `pyproject.toml` (que grava direto a
+  versão final `X.Y.Z`: é número de pacote Python, PEP 440, não aceita sufixo tipo
+  `-hml` - `uv`/`hatchling` recusam o arquivo). Se a mesma `release/*` receber mais um push
+  (ex.: correção depois de feedback de homologação), a versão já estabelecida é reaproveitada
+  (lida da própria tag `-hml` alcançável a partir do commit atual) em vez de recalculada - só
+  a tag se move. A tag final `vX.Y.Z` (sem sufixo) nasce sem nenhuma automação nova: é a
+  mesma que `_reusable-build.yml` já cria hoje, depois do build que só acontece no merge para
+  a `main` - que só é possível depois de aprovação de code owner. `fix/hotfix-*` nunca ganha
+  tag `-hml` (vai direto pra versão final, é urgência).
 - O push do bump usa um PAT de verdade (`GH_TOKEN`, não o `GITHUB_TOKEN` padrão), o que
   dispara o próprio `release.yml` de novo — `versionar.sh` detecta se o commit mais recente
   já é um bump seu e não faz nada, pra não entrar em loop de incremento.

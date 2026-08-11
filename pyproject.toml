@@ -1,6 +1,6 @@
 [project]
 name = "alerta-valor-pe-divergente-wpp"
-version = "1.0.0.dev2+hml"
+version = "1.0.0"
 description = "Bot RPA que verifica divergência entre o frete calculado e o valor do CTE do embarcador, alertando via WhatsApp"
 readme = "README.md"
 requires-python = ">=3.12"
