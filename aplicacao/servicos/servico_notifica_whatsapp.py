@@ -9,12 +9,10 @@ direto contra a Z-API.
 """
 
 from decimal import Decimal
-from typing import Any
 
 from configuracoes import Configuracoes
 from utils.cliente_api_v2 import ClienteApiV2, ErroApiV2
 
-_SISTEMA_CREDENCIAL = "whatsapp_alerta_pe"
 _TIPO_DESTINATARIO_TELEFONE = "telefone"
 
 
@@ -25,10 +23,10 @@ class ErroNotificacaoWhatsapp(Exception):
 class ServicoNotificaWhatsapp:
     """Formata a mensagem de alerta e envia via `POST /v2/notificacoes/whatsapp/`.
 
-    O destinatário (telefone ou id de grupo, ex.: `<id>-group`) vem da
-    credencial `whatsapp_alerta_pe` na API V2
-    (`configuracoes.obter_credencial("whatsapp_alerta_pe")`) — nunca hardcoded
-    no código nem lido do `.env`.
+    O destinatário (telefone ou id de grupo, ex.: `<id>-group`) vem de
+    `Configuracoes.WHATSAPP_ALERTA_DESTINO` — não é credencial de sistema
+    externo (não há cadastro de "whatsapp_alerta_pe" em `/v2/credenciais/`),
+    por isso não usa `configuracoes.obter_credencial`.
     """
 
     def __init__(self, configuracoes: Configuracoes):
@@ -52,12 +50,9 @@ class ServicoNotificaWhatsapp:
         resultado por destinatário — como só há um destinatário configurado,
         aceitar o HTTP já basta; falha de infraestrutura vira `ErroNotificacaoWhatsapp`.
         """
-        credenciais: dict[str, Any] = self._configuracoes.obter_credencial(_SISTEMA_CREDENCIAL)
-        destino = credenciais.get("destino")
+        destino = self._configuracoes.WHATSAPP_ALERTA_DESTINO
         if not destino:
-            raise ErroNotificacaoWhatsapp(
-                f"Credencial incompleta para o sistema {_SISTEMA_CREDENCIAL!r} — esperado 'destino'."
-            )
+            raise ErroNotificacaoWhatsapp("WHATSAPP_ALERTA_DESTINO não configurado.")
 
         mensagem = (
             f"🤖 *ALERTA AUTOMÁTICO - VALOR PE DIVERGENTE* 🤖\n\n"

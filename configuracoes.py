@@ -37,6 +37,12 @@ class Configuracoes:
     # Armazenamento padrão usado por `utils.Arquivos` (o `storage_name` de antes).
     ARMAZENAMENTO_PADRAO: str = os.getenv("ARMAZENAMENTO_PADRAO", "local")
 
+    # Destino do alerta de WhatsApp (telefone ou id de grupo, ex.: "<id>-group")
+    # — usado por `ServicoNotificaWhatsapp`. Não é credencial de sistema externo
+    # (não existe cadastro de "whatsapp_alerta_pe" em `/v2/credenciais/`), por
+    # isso vem direto do `.env`, não de `obter_credencial`.
+    WHATSAPP_ALERTA_DESTINO: str | None = os.getenv("WHATSAPP_ALERTA_DESTINO")
+
     def obter_credencial(self, sistema: str) -> dict[str, Any]:
         """Credencial de um sistema externo, resolvida pela API V2.
 

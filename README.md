@@ -59,22 +59,18 @@ cp .env.example .env
 |---|---|
 | `API_BASE_URL`/`API_USERNAME`/`API_PASSWORD` | Credenciais da **API V2** (`/v2/query/`, notificação WhatsApp, logs, credenciais) |
 | `API_TIMEOUT` | Timeout (segundos) das chamadas à API V2 — inclusive `/v2/notificacoes/whatsapp/` (padrão 60) |
+| `WHATSAPP_ALERTA_DESTINO` | Telefone ou id de grupo (ex.: `120363424569399839-group`) que recebe o alerta |
 | `ENVIRONMENT` | `development`/`production` |
 
 O usuário da API V2 (`API_USERNAME`) precisa ter a role **`v2_notificacoes_whatsapp`** liberada
 pelo time de infraestrutura, além das roles de dados/logs já usadas — sem ela `POST
 /v2/notificacoes/whatsapp/` responde `403`.
 
-**Credencial `whatsapp_alerta_pe` na API V2** (`configuracoes.obter_credencial("whatsapp_alerta_pe")`,
-lida por `ServicoNotificaWhatsapp`) — precisa ser cadastrada manualmente (`/v2/credenciais/`),
-no formato:
-
-```json
-{"destino": "<telefone-ou-id-de-grupo, ex.: 120363424569399839-group>"}
-```
-
-Só o destinatário mora nessa credencial: a Z-API em si (URL/token do provedor) é resolvida do
-lado da API V2, no cofre dela — o bot não guarda mais esse segredo.
+`WHATSAPP_ALERTA_DESTINO` é lido direto de `Configuracoes` (`.env`), não de
+`obter_credencial`: não é segredo de sistema externo (não há cadastro de
+`whatsapp_alerta_pe` em `/v2/credenciais/`), é só o destino do alerta. A Z-API em si
+(URL/token do provedor) é resolvida do lado da API V2, no cofre dela — o bot não guarda
+esse segredo.
 
 ## Hook de pre-commit (lint)
 
@@ -139,7 +135,7 @@ liberar acesso no ambiente de destino.
 
 ## Pendências manuais
 
-- [ ] Cadastrar a credencial `whatsapp_alerta_pe` na API V2, só com `destino` (ver seção Configuração).
+- [ ] Definir `WHATSAPP_ALERTA_DESTINO` no `.env` de cada ambiente (ver seção Configuração).
 - [ ] Liberar a role `v2_notificacoes_whatsapp` para o `API_USERNAME` deste bot.
 - [ ] Ativar o hook de pre-commit (`git config core.hooksPath .githooks`).
 - [ ] Ajustar o cron real em `kestra/bot.yml` (hoje com o placeholder do scaffold).
