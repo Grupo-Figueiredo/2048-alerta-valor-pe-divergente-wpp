@@ -25,7 +25,11 @@ permissions:
 
 jobs:
   deploy:
-    runs-on: self-hosted
+    # Mesmo motivo do build (ver _reusable-build.yml): preso ao runner de
+    # produção, não `self-hosted` genérico (que casa com qualquer máquina do
+    # pool). Só `prd.yml` chama este reutilizável neste bot (`release.yml`
+    # não builda nem implanta), sempre com ambiente=production.
+    runs-on: [self-hosted, as05prd]
     # `ambiente` é o input (homolog|production); `release`/`prd` são os
     # Environments provisionados pelo `create` (ServicoEnvironmentsGitHub).
     environment: ${{ inputs.ambiente == 'production' && 'prd' || 'release' }}

@@ -23,7 +23,12 @@ env:
 
 jobs:
   build:
-    runs-on: self-hosted
+    # Preso ao runner de produção, não `self-hosted` genérico: esse label
+    # também casa com outras máquinas do pool (ex.: `as21-hml`, sem Docker
+    # instalado - build falhou de verdade assim em produção). `as05prd` é o
+    # nome do runner de produção, vira label automático pelo próprio
+    # GitHub (todo runner ganha o próprio nome como label).
+    runs-on: [self-hosted, as05prd]
     timeout-minutes: 20
     # Grupo próprio por ambiente: nunca cancela um build no meio (só enfileira).
     concurrency:
