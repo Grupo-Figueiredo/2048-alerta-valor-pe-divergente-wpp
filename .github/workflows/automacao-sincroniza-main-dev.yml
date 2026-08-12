@@ -11,22 +11,25 @@ name: back-merge-main-dev
 # ja passou por aprovacao/CI, e a fonte de verdade. Nunca aborta pedindo
 # intervencao manual.
 #
+# Push direto na dev (sem PR): protect-dev tem bypass_mode "always" pro papel
+# Admin especificamente pra isso - 1 commit por ciclo (o merge em si) em vez
+# de 2 (merge + wrapper do PR). NUNCA sobrescreve a dev (sem --force): e' um
+# merge de verdade em cima do que a dev ja tem, entao continua sendo
+# fast-forward do ponto de vista do git - se a dev tiver commit proprio (ex.:
+# feat/* mergeado enquanto um ciclo de release termina em paralelo), ele
+# continua ali. Um mirror forcado (git push --force origin main:dev) seria
+# mais simples mas apagaria esse tipo de trabalho em andamento - por isso NAO
+# se faz isso aqui.
+#
 # Cobre so a dev: a release/* efemera ja e apagada ao virar main, entao
 # nao ha branch de homolog permanente para sincronizar (fase 2 concluida -
 # o Environment de homolog agora e o `release`, sem branch fixa).
-#
-# O merge do PR usa secrets.GH_TOKEN (PAT do Admin), nao o GITHUB_TOKEN
-# padrao: o ruleset protect-dev (provisionado por ServicoRulesetGitHub)
-# exige aprovacao via bypass_actors de role Admin, e o bot "github-actions"
-# nao entraria na lista de bypass - so um papel humano entraria. Com o PAT,
-# o merge e atribuido a esse humano e passa.
 on:
   push:
     branches: ["main"]
 
 permissions:
   contents: write
-  pull-requests: write
 
 concurrency:
   group: back-merge-main-dev
@@ -39,8 +42,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
 
-      - name: Back-merge main -> dev (merge commit real, nunca squash)
+      - name: Back-merge main -> dev (merge direto, sem PR)
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
@@ -54,8 +58,7 @@ jobs:
           git config user.name "back-merge-bot"
           git config user.email "actions@github.com"
 
-          BRANCH="chore/back-merge-main-$(git rev-parse --short origin/main)"
-          git checkout -b "$BRANCH" origin/dev
+          git checkout -B dev origin/dev
 
           # Tenta o merge normal; se conflitar, resolve a favor da main (fonte
           # ja aprovada/testada) em vez de abortar e pedir ajuda manual. Nao
@@ -78,14 +81,7 @@ jobs:
           git add -A
           git commit --no-edit
 
-          git push origin "$BRANCH"
-          gh pr create --base dev --head "$BRANCH" \
-            --title "chore: sincroniza dev com main via back-merge automatico" \
-            --body "Back-merge automatico apos push em main. Arquivos que a main alterou levam a versao dela - fonte ja aprovada/testada."
-
-          # --auto: um PR recem-criado tem os required status checks (ex.:
-          # validate-merge-source) ainda pendentes - um merge imediato e
-          # recusado pelo ruleset ("base branch policy prohibits the merge").
-          # --auto espera os checks passarem antes de mergear, em vez de
-          # falhar a corrida contra o tempo (ja aconteceu em producao).
-          gh pr merge "$BRANCH" --auto --merge --delete-branch
+          # Push direto, sem PR - bypass "always" do protect-dev cobre isso.
+          # Continua sendo fast-forward (o commit novo tem o HEAD antigo da
+          # dev como pai), nao precisa de --force.
+          git push origin HEAD:dev
