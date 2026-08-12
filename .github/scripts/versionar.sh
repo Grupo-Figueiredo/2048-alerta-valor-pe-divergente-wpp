@@ -97,20 +97,27 @@ else
   # 2) Sem label: varre os commits desde a ultima tag de producao.
   if [ -z "$nivel" ]; then
     if [ -n "$ultima_tag" ]; then
-      intervalo="$ultima_tag..HEAD"
-    else
-      intervalo="HEAD"
-    fi
-    corpo=$(git log "$intervalo" --format=%B || true)
+      corpo=$(git log "$ultima_tag..HEAD" --format=%B || true)
 
-    if echo "$corpo" | grep -qE '^[a-z]+(\([a-z0-9._/-]+\))?!:' || echo "$corpo" | grep -q 'BREAKING CHANGE'; then
-      nivel="major"
-    elif echo "$corpo" | grep -qE '^feat(\([a-z0-9._/-]+\))?:'; then
-      nivel="minor"
+      if echo "$corpo" | grep -qE '^[a-z]+(\([a-z0-9._/-]+\))?!:' || echo "$corpo" | grep -q 'BREAKING CHANGE'; then
+        nivel="major"
+      elif echo "$corpo" | grep -qE '^feat(\([a-z0-9._/-]+\))?:'; then
+        nivel="minor"
+      else
+        nivel="patch"
+      fi
+      echo "Nivel detectado pelos commits desde $ultima_tag: $nivel"
     else
-      nivel="patch"
+      # Nenhuma tag de producao ainda: nao houve primeiro release pra
+      # incrementar a partir dele. "desde o inicio do historico" recontaria
+      # o commit de breaking change original a CADA rodada (o `feat!:` que
+      # criou o bot nunca some do log) - bumpando pra major sem parar mesmo
+      # depois de uma correcao manual, porque nada marca esse commit como
+      # "ja contabilizado". Mantem a versao atual do pyproject.toml (ja e' o
+      # alvo do primeiro release) em vez de recalcular.
+      nivel="none"
+      echo "Nenhuma tag de producao ainda - mantendo a versao atual do pyproject.toml ($atual) como alvo do primeiro release."
     fi
-    echo "Nivel detectado pelos commits desde ${ultima_tag:-o inicio do historico}: $nivel"
   fi
 
   # 3) Versao base = ultima tag de producao.
@@ -136,6 +143,9 @@ else
       ;;
     patch)
       patch=$((patch + 1))
+      ;;
+    none)
+      : # sem tag de producao ainda - versao fica como esta (ver comentario acima)
       ;;
     *)
       echo "::error::nivel invalido: '$nivel'"
