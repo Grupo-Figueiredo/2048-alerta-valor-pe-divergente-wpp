@@ -91,6 +91,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: v${{ steps.versao.outputs.versao }}
+          NOTAS: "Imagem publicada: ${{ env.IMAGE_REPO }}:${{ steps.tags.outputs.fixa }}"
         run: |
           # Idempotente: um re-run do workflow não pode falhar por tag repetida.
           if git rev-parse "$TAG" >/dev/null 2>&1; then
@@ -99,5 +100,13 @@ jobs:
           fi
           git tag "$TAG"
           git push origin "$TAG"
-          gh release create "$TAG" --title "$TAG" \
-            --notes "Imagem publicada: ${{ env.IMAGE_REPO }}:${{ steps.tags.outputs.fixa }}"
+
+          # curl direto na API, não `gh release create`: o runner self-hosted
+          # não tem o gh CLI instalado (visto em produção: "gh: command not
+          # found") - curl é universal, sem depender de ferramenta extra no host.
+          curl -sS -f -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases" \
+            -d "{\"tag_name\":\"${TAG}\",\"name\":\"${TAG}\",\"body\":\"${NOTAS}\"}"

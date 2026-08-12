@@ -82,4 +82,10 @@ jobs:
           gh pr create --base dev --head "$BRANCH" \
             --title "chore: sincroniza dev com main via back-merge automatico" \
             --body "Back-merge automatico apos push em main. Arquivos que a main alterou levam a versao dela - fonte ja aprovada/testada."
-          gh pr merge "$BRANCH" --merge --delete-branch
+
+          # --auto: um PR recem-criado tem os required status checks (ex.:
+          # validate-merge-source) ainda pendentes - um merge imediato e
+          # recusado pelo ruleset ("base branch policy prohibits the merge").
+          # --auto espera os checks passarem antes de mergear, em vez de
+          # falhar a corrida contra o tempo (ja aconteceu em producao).
+          gh pr merge "$BRANCH" --auto --merge --delete-branch
