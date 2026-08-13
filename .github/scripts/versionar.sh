@@ -27,6 +27,13 @@
 #   depois de aprovacao de code owner. fix/hotfix-* nunca ganha tag "-hml"
 #   (vai direto pra versao final, e urgencia).
 #
+#   Uma tag sozinha nao aparece na aba Releases do GitHub nem ganha o badge
+#   "Pre-release" - por isso o script tambem cria (so na primeira vez) uma
+#   Release apontando pra essa tag, com `--prerelease`. So cria se ainda nao
+#   existe: a mesma tag "-hml" se move a cada push desta release/*, e uma
+#   nota de release escrita a mao (o time costuma detalhar o que foi testado)
+#   nao deve ser apagada por uma rodada nova de CI.
+#
 # Protecao contra loop: o push do commit de bump usa GH_TOKEN (um PAT de
 # verdade, que dispara o proprio workflow de novo - diferente do
 # GITHUB_TOKEN padrao). Sem tag de producao ainda, "desde a ultima tag"
@@ -176,4 +183,10 @@ if [[ "$BRANCH" == release/* ]]; then
   git tag -f "$tag_hml" HEAD
   git push origin "refs/tags/$tag_hml" --force
   echo "Tag de homologação atualizada: $tag_hml -> $(git rev-parse --short HEAD)"
+
+  if ! gh release view "$tag_hml" >/dev/null 2>&1; then
+    gh release create "$tag_hml" --title "$tag_hml" --prerelease \
+      --notes "Build de homologação da versão $nova, gerado a partir de $BRANCH."
+    echo "Release de homologação criada: $tag_hml (pre-release)"
+  fi
 fi
