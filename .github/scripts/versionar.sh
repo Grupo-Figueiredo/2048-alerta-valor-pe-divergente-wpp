@@ -43,6 +43,15 @@
 # versionar - mas a tag "-hml" (se for release/*) ainda e movida pro commit
 # atual antes de sair, ja que o push anterior pode ter sido so o bump.
 #
+# Esse guard (e o de reaproveitar a tag "-hml" existente) so vale quando NAO
+# ha label de override: a label e um sinal explicito, nao muda entre
+# rodadas, e a checagem final "atual == nova" ja garante convergencia mesmo
+# recalculando toda rodada - por isso ela fura os dois guards de proposito
+# (ver bug real: PR merged via squash faz a dev nunca compartilhar o hash da
+# tag de producao, entao o scan de commits reconta um `feat!`/`BREAKING
+# CHANGE` antigo pra sempre; sem essa prioridade, a label nunca corrigia
+# isso porque o guard de loop barrava antes de ela ser sequer olhada).
+#
 # Requisitos do ambiente: checkout com fetch-depth: 0, GH_TOKEN no
 # ambiente (PAT do Admin - necessario tanto para o push, que precisa
 # pular o ruleset protect-release/protect-dev, quanto para o gh CLI
@@ -82,24 +91,27 @@ for t in $(git tag -l 'v*-hml'); do
   fi
 done
 
-if git log -1 --format=%s | grep -qE '^chore: versiona [0-9]+\.[0-9]+\.[0-9]+ \('; then
+# 1) Sobrescrita por label no PR desta branch para a main - checada ANTES
+#    dos guards de loop/reaproveitamento (ver "Protecao contra loop" acima).
+nivel_label=""
+pr_numero=$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)
+if [ -n "$pr_numero" ]; then
+  label=$(gh pr view "$pr_numero" --json labels --jq '.labels[].name' 2>/dev/null | grep -m1 '^version:' || true)
+  if [ -n "$label" ]; then
+    nivel_label="${label#version:}"
+    echo "Sobrescrita por label no PR #$pr_numero: $label"
+  fi
+fi
+
+if [ -z "$nivel_label" ] && git log -1 --format=%s | grep -qE '^chore: versiona [0-9]+\.[0-9]+\.[0-9]+ \('; then
   echo "Commit mais recente já é um bump de versão (evita loop) - nada a fazer."
   nova="$atual"
   echo "incrementou=false" >>"$GITHUB_OUTPUT"
-elif [ -n "$nova_existente" ]; then
+elif [ -z "$nivel_label" ] && [ -n "$nova_existente" ]; then
   nova="$nova_existente"
   echo "Tag $nova-hml já existe neste ciclo - reaproveitando alvo $nova"
 else
-  # 1) Sobrescrita por label no PR desta branch para a main.
-  nivel=""
-  pr_numero=$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)
-  if [ -n "$pr_numero" ]; then
-    label=$(gh pr view "$pr_numero" --json labels --jq '.labels[].name' 2>/dev/null | grep -m1 '^version:' || true)
-    if [ -n "$label" ]; then
-      nivel="${label#version:}"
-      echo "Sobrescrita por label no PR #$pr_numero: $label"
-    fi
-  fi
+  nivel="$nivel_label"
 
   # 2) Sem label: varre os commits desde a ultima tag de producao.
   if [ -z "$nivel" ]; then
