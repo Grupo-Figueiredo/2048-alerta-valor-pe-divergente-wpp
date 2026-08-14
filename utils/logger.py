@@ -16,6 +16,9 @@ ressalva (regra de negócio) · `3` erro de sistema · `4` sucesso · `5` cancel
 Um `registrar()` com tipo `error`/`critical` **encerra a execução sozinho** do
 lado da API (`status=3`, `final_id_error` e `end_date`) — não é preciso chamar
 `atualizar_execucao` depois de logar um erro fatal.
+
+Os três métodos também ecoam a mesma linha no console (`stdout`, `flush=True`)
+antes de falar com a API — ver `_ecoar`.
 """
 
 import sys
@@ -33,6 +36,14 @@ STATUS_RESSALVA = 2
 STATUS_ERRO_SISTEMA = 3
 STATUS_SUCESSO = 4
 STATUS_CANCELADO = 5
+
+_NOME_STATUS = {
+    STATUS_EXECUTANDO: "EXECUTANDO",
+    STATUS_RESSALVA: "RESSALVA",
+    STATUS_ERRO_SISTEMA: "ERRO_SISTEMA",
+    STATUS_SUCESSO: "SUCESSO",
+    STATUS_CANCELADO: "CANCELADO",
+}
 
 
 class Logger:
@@ -68,6 +79,7 @@ class Logger:
             "runner": self._configuracoes.HOST,
             **campos,
         }
+        self._ecoar(f"INICIO bot_id={corpo['bot_id']} environment={corpo['environment']} runner={corpo['runner']}")
         resposta = self._cliente.requisitar("POST", "/v2/logs/execucoes/", corpo=corpo)
         if resposta.status_code != 201:
             raise ErroApiV2(f"Falha ao iniciar a execução do bot (HTTP {resposta.status_code}): {resposta.text[:200]}")
@@ -99,6 +111,10 @@ class Logger:
         """
         if tipo not in TIPOS_LOG:
             raise ValueError(f"type_log inválido: {tipo!r}. Use um de {TIPOS_LOG}.")
+
+        self._ecoar(f"{tipo.upper()} [{tarefa}] {mensagem}")
+        if traceback:
+            print(traceback, flush=True)
 
         corpo: dict[str, Any] = {
             "type_log": tipo,
@@ -151,6 +167,17 @@ class Logger:
         if self._id_execucao is None:
             return self._avisar_falha("execução não iniciada — nada a atualizar.")
 
+        detalhes = " ".join(
+            parte
+            for parte in (
+                f"status={_NOME_STATUS.get(status, status)}" if status is not None else None,
+                f"mensagem={mensagem!r}" if mensagem is not None else None,
+                f"itens_processados={itens_processados}" if itens_processados is not None else None,
+            )
+            if parte
+        )
+        self._ecoar(f"FIM {detalhes}" if detalhes else "FIM (atualização parcial)")
+
         corpo: dict[str, Any] = dict(campos)
         if status is not None:
             corpo["status"] = status
@@ -172,6 +199,19 @@ class Logger:
         return self._json(resposta)
 
     # --- auxiliares -------------------------------------------------------
+
+    @staticmethod
+    def _ecoar(linha: str) -> None:
+        """Espelha a mesma linha do log no `stdout`, além do `POST`/`PATCH` à API V2.
+
+        Sem isso a task do bot no Kestra aparecia vazia — nada era impresso, então
+        não dava pra saber em que etapa o bot estava. `flush=True` e chamado antes
+        da requisição de propósito: se o bot morrer no meio da chamada de rede (API
+        fora do ar, credencial errada), a linha já foi pro console mesmo sem
+        chegar na API — o buffer padrão do stdout só é descartado nesse cenário se
+        não for esvaziado explicitamente.
+        """
+        print(f"[{datetime.now().isoformat(timespec='seconds')}] {linha}", flush=True)
 
     @staticmethod
     def _avisar_falha(motivo: str) -> dict[str, Any]:
