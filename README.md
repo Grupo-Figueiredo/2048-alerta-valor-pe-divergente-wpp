@@ -1,12 +1,12 @@
 # 2048 - Alerta de Valor de PE Divergente (WhatsApp)
 
-Bot RPA (arquétipo **integracao-api-figueiredo** — dados e alerta via WhatsApp, ambos pela
+Bot RPA (arquétipo **integracao-api-figueiredo**: dados e alerta via WhatsApp, ambos pela
 API V2) do Grupo Figueiredo.
 
 Verifica, para cada Pedido de Embarque (PE) da Aperam pendente de validação, se o valor total
 do CTE informado pelo embarcador confere com o CTE oficial (`sgt20.gr_cte`, fonte
 Protheus/TOTVS). Quando diverge, atualiza a auditoria em `cte_value_audit` e envia um alerta
-via WhatsApp (`POST /v2/notificacoes/whatsapp/` da própria API V2 — a Z-API mora do outro lado,
+via WhatsApp (`POST /v2/notificacoes/whatsapp/` da própria API V2; a Z-API mora do outro lado,
 resolvida pela API a partir do cofre dela).
 
 ## Estrutura
@@ -18,7 +18,7 @@ aplicacao/
 ├── controladores/
 │   └── controlador_principal.py   # Orquestrador: busca os PEs pendentes e processa cada um
 ├── excecoes/
-│   └── excecao_negocio.py         # ExcecaoNegocio — erro de negócio recuperável
+│   └── excecao_negocio.py         # ExcecaoNegocio (erro de negócio recuperável)
 └── servicos/
     ├── servico_compara_valores.py        # Compara o CTE do embarcador com o CTE oficial (gr_cte)
     └── servico_notifica_whatsapp.py      # Monta e envia o alerta via POST /v2/notificacoes/whatsapp/
@@ -27,12 +27,24 @@ repositorios/                  # Acesso a dados via API V2 (/v2/query/)
 ├── repositorio_autom_data.py    # connection: autom_data (auditoria de CTE)
 └── repositorio_sgt20.py         # connection: sgt20 (CTE oficial, gr_cte)
 utils/                          # Infraestrutura sobre a API V2 (cliente/JWT, logger,
-                                # credenciais, arquivos) — camada mais baixa
+                                # credenciais, arquivos), camada mais baixa
+```
+
+```mermaid
+flowchart TD
+    main["main.py"] --> ctrl["controlador_principal.py"]
+    ctrl --> svcCompara["servico_compara_valores.py"]
+    ctrl --> svcWpp["servico_notifica_whatsapp.py"]
+    svcCompara --> repoAutom["repositorio_autom_data.py (autom_data)"]
+    svcCompara --> repoSgt20["repositorio_sgt20.py (sgt20)"]
+    svcWpp --> apiV2["ClienteApiV2 → POST /v2/notificacoes/whatsapp/"]
+    repoAutom --> utils["utils/"]
+    repoSgt20 --> utils
 ```
 
 Veja [CLAUDE.md](./CLAUDE.md) para as regras de arquitetura e convenções deste projeto. A
 notificação de WhatsApp é hoje uma rota da própria API V2 (`POST /v2/notificacoes/whatsapp/`,
-que fala com a Z-API do outro lado) — por isso `ServicoNotificaWhatsapp` chama
+que fala com a Z-API do outro lado), por isso `ServicoNotificaWhatsapp` chama
 `ClienteApiV2.requisitar(...)` diretamente (mesmo padrão de `utils.Logger`/`utils.Arquivos` para
 "qualquer outra rota da API V2"), e não `requests` contra um terceiro. Não é uma chamada de
 `repositorios/` porque não é uma query em `/v2/query/`.
@@ -41,7 +53,7 @@ que fala com a Z-API do outro lado) — por isso `ServicoNotificaWhatsapp` chama
 
 1. Busca em `autom_data.cte_value_audit` os PEs das filiais 15/2, criados no último dia, com
    valor total informado e ainda não validados (`valor_validado is null`).
-2. Para cada PE, busca o CTE oficial em `sgt20.gr_cte` pelo `documento_transporte` — só
+2. Para cada PE, busca o CTE oficial em `sgt20.gr_cte` pelo `documento_transporte`; só
    considera CTE `ativo`, não `deletado` e com `id_rejeicao_cte = 100` (exclui cancelado,
    recusado ou inativo), pegando o mais recente (`order by id desc`) se houver mais de um. Se
    não encontrar (CTE ainda não emitido/sincronizado, ou só há CTE cancelado/recusado), **pula
@@ -52,6 +64,18 @@ que fala com a Z-API do outro lado) — por isso `ServicoNotificaWhatsapp` chama
    `valor_liquido_cte_figueiredo`/`valor_impostos_cte_figueiredo`/`valor_total_cte_figueiredo`
    e `numero_cte` (vindos de `gr_cte`) na auditoria, e marca `valor_validado = true`.
 
+```mermaid
+flowchart TD
+    A["Busca PEs pendentes em autom_data.cte_value_audit<br/>(filiais 15/2, último dia, valor_validado is null)"] --> B{"Para cada PE"}
+    B --> C["Busca CTE oficial em sgt20.gr_cte<br/>(ativo, não deletado, id_rejeicao_cte = 100, mais recente)"]
+    C -->|não encontrado| D["Pula o PE, sem gravar nada<br/>(tenta de novo na próxima execução)"]
+    C -->|encontrado| E{"valor_total_cte_embarcador ≠ gr_cte.valor_total_frete<br/>(tolerância R$ 1,00)?"}
+    E -->|sim| F["Envia alerta via WhatsApp<br/>(POST /v2/notificacoes/whatsapp/)"]
+    E -->|não| G["Sem alerta"]
+    F --> H["Grava valores oficiais e numero_cte<br/>marca valor_validado = true"]
+    G --> H
+```
+
 ## Configuração
 
 ```bash
@@ -61,24 +85,24 @@ cp .env.example .env
 | Variável | Descrição |
 |---|---|
 | `API_BASE_URL`/`API_USERNAME`/`API_PASSWORD` | Credenciais da **API V2** (`/v2/query/`, notificação WhatsApp, logs, credenciais) |
-| `API_TIMEOUT` | Timeout (segundos) das chamadas à API V2 — inclusive `/v2/notificacoes/whatsapp/` (padrão 60) |
+| `API_TIMEOUT` | Timeout (segundos) das chamadas à API V2, inclusive `/v2/notificacoes/whatsapp/` (padrão 60) |
 | `WHATSAPP_ALERTA_DESTINO` | Telefone ou id de grupo que recebe o alerta (padrão `120363424569399839-group`) |
 | `ENVIRONMENT` | `development`/`production` |
 
 O usuário da API V2 (`API_USERNAME`) precisa ter a role **`v2_notificacoes_whatsapp`** liberada
-pelo time de infraestrutura, além das roles de dados/logs já usadas — sem ela `POST
+pelo time de infraestrutura, além das roles de dados/logs já usadas; sem ela `POST
 /v2/notificacoes/whatsapp/` responde `403`.
 
 `WHATSAPP_ALERTA_DESTINO` é lido direto de `Configuracoes` (`.env`), não de
 `obter_credencial`: não é segredo de sistema externo (não há cadastro de
 `whatsapp_alerta_pe` em `/v2/credenciais/`), é só o destino do alerta. A Z-API em si
-(URL/token do provedor) é resolvida do lado da API V2, no cofre dela — o bot não guarda
+(URL/token do provedor) é resolvida do lado da API V2, no cofre dela; o bot não guarda
 esse segredo.
 
 ## Hook de pre-commit (lint)
 
 Este projeto tem um hook em `.githooks/pre-commit` que roda lint a cada commit local
-(`ruff check` + `ruff format --check`) — **bloqueia o commit se falhar**. Ele **não** mexe na
+(`ruff check` + `ruff format --check`); **bloqueia o commit se falhar**. Ele **não** mexe na
 versão: quem calcula e aplica a versão é o CI (`.github/scripts/versionar.sh`), a partir da
 última tag de produção e do tipo dos commits.
 
@@ -122,18 +146,18 @@ usado na busca dos PEs pendentes e para os timestamps de execução via `datetim
 ## Kestra
 
 Este bot roda no Kestra, orquestrador fora deste repositório. O flow de referência está em
-[`kestra/bot.yml`](./kestra/bot.yml) — hoje **aplicado manualmente na UI do Kestra** (nenhum
+[`kestra/bot.yml`](./kestra/bot.yml), hoje **aplicado manualmente na UI do Kestra** (nenhum
 bot do Grupo Figueiredo automatiza esse passo ainda). Build e deploy só acontecem **no merge
 para a `main`** (`prd.yml`, depois do build); `release.yml` não builda nem implanta. O job
 `deploy` (`_reusable-deploy.yml`) só confirma que o flow existe; a implantação automática via
 API do Kestra é um `TODO(tech lead)` dentro desse workflow. O agendamento em `kestra/bot.yml`
-está com o cron placeholder do scaffold (`0 * * * *`) — ajuste para a frequência real antes de
+está com o cron placeholder do scaffold (`0 * * * *`); ajuste para a frequência real antes de
 aplicar o flow.
 
 ## Acesso a dados (`permissoes.csv`)
 
 Todo acesso a banco passa pela API V2 (`POST /v2/query/`). O inventário de tabelas/permissões
-usadas está em [`permissoes.csv`](./permissoes.csv) — é o insumo do time de infraestrutura para
+usadas está em [`permissoes.csv`](./permissoes.csv); é o insumo do time de infraestrutura para
 liberar acesso no ambiente de destino.
 
 ## Pendências manuais
