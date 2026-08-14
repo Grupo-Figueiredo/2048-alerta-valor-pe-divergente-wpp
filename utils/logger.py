@@ -211,7 +211,7 @@ class Logger:
         chegar na API — o buffer padrão do stdout só é descartado nesse cenário se
         não for esvaziado explicitamente.
         """
-        print(f"[{datetime.now().isoformat(timespec='seconds')}] {linha}", flush=True)
+        print(linha, flush=True)
 
     @staticmethod
     def _avisar_falha(motivo: str) -> dict[str, Any]:
