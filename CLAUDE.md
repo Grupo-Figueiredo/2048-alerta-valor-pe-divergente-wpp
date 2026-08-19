@@ -296,8 +296,12 @@ arquivos.baixar("RPA/190/entrada.csv", "entrada.csv")
   versão final `X.Y.Z`: é número de pacote Python, PEP 440, não aceita sufixo tipo
   `-hml` - `uv`/`hatchling` recusam o arquivo). Se a mesma `release/*` receber mais um push
   (ex.: correção depois de feedback de homologação), a versão já estabelecida é reaproveitada
-  (lida da própria tag `-hml` alcançável a partir do commit atual) em vez de recalculada - só
-  a tag se move. A tag final `vX.Y.Z` (sem sufixo) nasce sem nenhuma automação nova: é a
+  (lida da própria tag `-hml` alcançável a partir do commit atual, **só se for maior, via
+  semver, que a última tag de produção real** — não basta checar se a tag final daquela versão
+  existe: um ciclo abandonado por override de label, com uma `-hml` intermediária que nunca
+  virou tag definitiva, também fica ancestral do HEAD pra sempre e não pode ser reaproveitado)
+  em vez de recalculada - só a tag se move. A tag final `vX.Y.Z` (sem sufixo) nasce sem nenhuma
+  automação nova: é a
   mesma que `_reusable-build.yml` já cria hoje, depois do build que só acontece no merge para
   a `main` - que só é possível depois de aprovação de code owner. `fix/hotfix-*` nunca ganha
   tag `-hml` (vai direto pra versão final, é urgência).
