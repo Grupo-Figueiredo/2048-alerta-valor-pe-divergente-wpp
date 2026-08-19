@@ -9,6 +9,18 @@ Protheus/TOTVS). Quando diverge, atualiza a auditoria em `cte_value_audit` e env
 via WhatsApp (`POST /v2/notificacoes/whatsapp/` da própria API V2; a Z-API mora do outro lado,
 resolvida pela API a partir do cofre dela).
 
+```mermaid
+flowchart TD
+    A["Busca PEs pendentes em autom_data.cte_value_audit"] --> B{"Para cada PE"}
+    B --> C["Busca CTE oficial em sgt20.gr_cte"]
+    C -->|não encontrado| D["Pula o PE - tenta de novo na próxima execução"]
+    C -->|encontrado| E{"Valor do embarcador ≠ valor oficial do CTE?"}
+    E -->|sim| F["Envia alerta via WhatsApp"]
+    E -->|não| G["Sem alerta"]
+    F --> H["Grava valores oficiais e marca valor_validado = true"]
+    G --> H
+```
+
 ## Estrutura
 
 ```
