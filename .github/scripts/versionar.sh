@@ -83,11 +83,30 @@ atual=$(grep -m1 '^version' "$PYPROJECT" | cut -d'"' -f2)
 # zero, leria o "atual" ja bumpado como base e bumparia de novo por cima
 # (o mesmo bug do loop, so que disparado por commit de verdade em vez de
 # auto-retrigger do proprio push).
+#
+# So conta se a versao candidata for MAIOR (semver, via sort -V) que a
+# ultima tag de producao real - nao basta checar "essa tag final existe?":
+# uma "-hml" de ciclo ja publicado (versao <= ultima_tag) ou de ciclo
+# abandonado por override de label (ex.: um version:major reescreveu a
+# versao final antes de uma -hml intermediaria virar tag definitiva) fica
+# ancestral do HEAD pra
+# sempre e nao pode ser reaproveitada - senao um release/hotfix futuro
+# regride pra essa versao velha em vez de incrementar a partir da producao
+# real.
 nova_existente=""
-for t in $(git tag -l 'v*-hml'); do
+ultima_versao="${ultima_tag#v}"
+for t in $(git tag -l 'v*-hml' | sort -V); do
   if git merge-base --is-ancestor "$t" HEAD 2>/dev/null; then
-    nova_existente="${t#v}"
-    nova_existente="${nova_existente%-hml}"
+    versao_candidata="${t#v}"
+    versao_candidata="${versao_candidata%-hml}"
+    if [ -z "$ultima_versao" ]; then
+      nova_existente="$versao_candidata"
+    else
+      maior=$(printf '%s\n%s\n' "$ultima_versao" "$versao_candidata" | sort -V | tail -1)
+      if [ "$maior" = "$versao_candidata" ] && [ "$versao_candidata" != "$ultima_versao" ]; then
+        nova_existente="$versao_candidata"
+      fi
+    fi
   fi
 done
 

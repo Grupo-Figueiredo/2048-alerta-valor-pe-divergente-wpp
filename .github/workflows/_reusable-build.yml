@@ -24,16 +24,22 @@ env:
 jobs:
   build:
     # Preso ao runner de produção, não `self-hosted` genérico: esse label
-    # também casa com outras máquinas do pool (ex.: `as21-hml`, sem Docker
-    # instalado - build falhou de verdade assim em produção). `as05prd` é o
-    # nome do runner de produção, vira label automático pelo próprio
-    # GitHub (todo runner ganha o próprio nome como label).
+    # também casa com outras máquinas do pool sem Docker instalado ou sem
+    # acesso ao registry interno. Nome do runner de produção vira label
+    # automático pelo próprio GitHub (todo runner ganha o próprio nome).
+    #
+    # Só o que precisa de Docker/registry interno roda aqui. Tag e release do
+    # GitHub não dependem de nada específico do as05prd — ver job `release`
+    # abaixo, que roda em runner hospedado (com `gh` já pré-instalado).
     runs-on: [self-hosted, as05prd]
     timeout-minutes: 20
     # Grupo próprio por ambiente: nunca cancela um build no meio (só enfileira).
     concurrency:
       group: build-${{ inputs.ambiente }}
       cancel-in-progress: false
+    outputs:
+      versao: ${{ steps.versao.outputs.versao }}
+      tag_fixa: ${{ steps.tags.outputs.fixa }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -62,9 +68,20 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
+      # `--pull` + `--no-cache`: o runner é `self-hosted` e persiste o cache de
+      # camadas do Docker entre execuções — inclusive de OUTROS bots gerados por
+      # este mesmo template (Dockerfile-boilerplate idêntico entre eles). Sem
+      # essas flags, uma camada de `RUN apt-get update && apt-get upgrade` já em
+      # cache (gerada antes de uma correção de segurança sair) é reaproveitada
+      # sem reexecutar o upgrade, mesmo com o Dockerfile pedindo pra sempre
+      # atualizar os pacotes do SO — foi o que bloqueou o build de produção do
+      # 2050-baixa-cte-financeiro (CVE-2026-53615 em util-linux/libblkid, já com
+      # correção disponível no Debian, mas não aplicada por causa do cache).
       - name: Build da imagem
         run: |
           docker build \
+            --pull \
+            --no-cache \
             -t ${{ env.IMAGE_REPO }}:${{ steps.tags.outputs.movel }} \
             -t ${{ env.IMAGE_REPO }}:${{ steps.tags.outputs.fixa }} \
             .
@@ -83,35 +100,50 @@ jobs:
           docker push ${{ env.IMAGE_REPO }}:${{ steps.tags.outputs.movel }}
           docker push ${{ env.IMAGE_REPO }}:${{ steps.tags.outputs.fixa }}
 
-      # Só DEPOIS do push confirmado: nunca marcamos como publicada uma versão
-      # cuja imagem falhou no caminho (build, Trivy ou push).
-      #
-      # A tag `v<versão>` não é decorativa: `.github/scripts/versionar.sh` usa a
-      # última tag de produção como base do próximo incremento e como início do
-      # intervalo de commits que ele varre. Sem este passo, todo ciclo
-      # recalcularia a versão varrendo o histórico inteiro, a partir de uma base
-      # errada — é este passo que fecha o ciclo do versionamento semântico.
+  # Só DEPOIS do push confirmado: nunca marcamos como publicada uma versão
+  # cuja imagem falhou no caminho (build, Trivy ou push).
+  #
+  # Roda em runner hospedado (não no as05prd): tag/release do GitHub são só
+  # `git`/`gh` — não tocam Docker nem o registry interno, então não precisam
+  # do runner de produção. Isso também evita depender de `gh` estar instalado
+  # no as05prd (não estava — via disso o job quebrar com "gh: command not
+  # found" mesmo com o push da imagem já confirmado).
+  #
+  # A tag `v<versão>` não é decorativa: `.github/scripts/versionar.sh` usa a
+  # última tag de produção como base do próximo incremento e como início do
+  # intervalo de commits que ele varre. Sem este passo, todo ciclo
+  # recalcularia a versão varrendo o histórico inteiro, a partir de uma base
+  # errada — é este passo que fecha o ciclo do versionamento semântico.
+  release:
+    needs: build
+    if: inputs.ambiente == 'production'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-tag-${{ inputs.ambiente }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Criar tag e release da versão publicada
-        if: inputs.ambiente == 'production'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: v${{ steps.versao.outputs.versao }}
-          NOTAS: "Imagem publicada: ${{ env.IMAGE_REPO }}:${{ steps.tags.outputs.fixa }}"
+          TAG: v${{ needs.build.outputs.versao }}
         run: |
-          # Idempotente: um re-run do workflow não pode falhar por tag repetida.
+          # Tag e release são idempotentes de forma independente: um re-run
+          # não pode pular a release só porque a tag (criada num run anterior
+          # que falhou depois) já existe.
           if git rev-parse "$TAG" >/dev/null 2>&1; then
             echo "Tag $TAG já existe, nada a fazer."
-            exit 0
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
           fi
-          git tag "$TAG"
-          git push origin "$TAG"
 
-          # curl direto na API, não `gh release create`: o runner self-hosted
-          # não tem o gh CLI instalado (visto em produção: "gh: command not
-          # found") - curl é universal, sem depender de ferramenta extra no host.
-          curl -sS -f -X POST \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases" \
-            -d "{\"tag_name\":\"${TAG}\",\"name\":\"${TAG}\",\"body\":\"${NOTAS}\"}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG já existe, nada a fazer."
+          else
+            gh release create "$TAG" --title "$TAG" \
+              --notes "Imagem publicada: ${{ env.IMAGE_REPO }}:${{ needs.build.outputs.tag_fixa }}"
+          fi
